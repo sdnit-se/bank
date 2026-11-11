@@ -41,7 +41,7 @@ const COPY = {
   ],
   houseUp: [
     (w) => `${w.who} personally financed ${w.amount} of it, and would like it known that the plan was working right up until it wasn't.`,
-    (w) => `${w.who} led the donations with ${w.amount}. Buy high, sell low, bet on red: tradition is tradition.`,
+    (w) => `${w.who} supplied ${w.amount} of it. Some people have a savings account. ${w.who} has the house.`,
     (w) => `It kept ${w.hold} of everything staked (it's meant to keep about 3%), mostly thanks to ${w.who}, who is down ${w.amount} and feels due.`,
   ],
   houseDown: [
@@ -51,11 +51,11 @@ const COPY = {
   ],
   thanks: [
     (w) => `${w.who} was thanked the most (${w.amount}), presumably for doing actual work. Unusual behaviour for a casino, but we allow it.`,
-    (w) => `Most of it went to ${w.who} (${w.amount}). Wholesomeness, priced in coins, as nature intended.`,
+    (w) => `Most of it went to ${w.who} (${w.amount}). Somebody did their job well enough that a colleague paid for it out of pocket. Unheard of.`,
     (w) => `${w.who} leads with ${w.amount}. This remains, somehow, what the bank is for.`,
   ],
   mutual: [
-    (w) => `The fraud desk notes that ${w.a} and ${w.b} gave each other coins in both directions, with no goods or services changing hands. Scandalous. (Don't commit fraud, everyone. It's mean.)`,
+    (w) => `${w.a} and ${w.b} gave each other coins in both directions, which is either friendship or a very small money-laundering operation. We've chosen not to ask.`,
     (w) => `${w.a} and ${w.b} sent each other coins both ways and ended up exactly where they started. Regulators call that round-tripping. We call it a cry for help.`,
   ],
   lent: [
@@ -65,7 +65,7 @@ const COPY = {
   matured: [(w) => `${w.owners} lent money to the central bank and actually got it back. Nobody is more surprised than the central bank.`],
   defaulted: [(w) => `${w.owners} got the ${w.lent} back, with ${w.paid} of the interest they were promised. In the trade this is called a default. Here it's called ${w.day}.`],
   wealth: [
-    (w) => `Paid by ${w.payers}, for the crime of still having coins. The people asked for a wealth tax (they didn't), and the people have received.`,
+    (w) => `Paid by ${w.payers}, who discovered that the reward for not gambling it all away is a bill.`,
     (w) => `Collected from ${w.payers} who failed to lose it at blackjack in time. Let that be a lesson.`,
   ],
   called: [
@@ -75,7 +75,7 @@ const COPY = {
   asked: [(w) => `Opinions are free. Being wrong costs coins: ${w.how}`],
   expired: [() => `Thirty days and nobody could say how it went, so the stakes went back. As a company we remain undecided on a number of things.`],
   trades: [
-    () => `Buy high, sell low, as tradition demands.`,
+    () => `Somewhere a professional fund manager is underperforming an index for a fee. Here we do it for free.`,
     () => `All placed by people who also lose at coin flips. Past performance, etc.`,
     () => `None of this is financial advice, mostly because none of it was advisable.`,
   ],
@@ -154,7 +154,7 @@ export async function publish(ledger: Ledger, round: Round, now = Date.now()) {
   }
   if (day.bets && best && worst) {
     const off = `off ${count(day.bets, "bet", "bets").toLowerCase()}`
-    const duels = day.duels > 0 && `Also ${count(day.duels, "duel", "duels").toLowerCase()}, for those who find slot machines too intellectually demanding.`
+    const duels = day.duels > 0 && `Also ${count(day.duels, "duel", "duels").toLowerCase()}, the only game here where you lose to a colleague instead of to arithmetic.`
     if (house > 0) story(`The house made ${coins(house)} ${off}`, worst[1] < 0 && line(COPY.houseUp, { who: at(worst[0]), amount: coins(-worst[1]), hold: percent(house, day.staked) }), duels)
     else if (house < 0) story(`The house lost ${coins(-house)} ${off}`, best[1] > 0 && line(COPY.houseDown, { who: at(best[0]), amount: coins(best[1]) }), duels)
     else story(`The house broke even ${off}`, "Coins went in, the same coins came out, and everyone involved wasted their time very efficiently.", duels)
