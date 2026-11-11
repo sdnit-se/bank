@@ -108,6 +108,24 @@ export type EventEnvelope = {
     | { type: "app_uninstalled" | "tokens_revoked" }
 }
 
+type SlackChannel = {
+  id: string
+  is_member?: boolean
+  is_archived?: boolean
+  is_shared?: boolean
+  is_ext_shared?: boolean
+  is_pending_ext_shared?: boolean
+  is_org_shared?: boolean
+}
+
+/**
+ * Channels shared with other organizations (Slack Connect, customer channels) or waiting to be. Bank never joins them
+ * on its own; people can still invite it there by hand.
+ */
+function external(channel: SlackChannel) {
+  return Boolean(channel.is_ext_shared || channel.is_pending_ext_shared || (channel.is_shared && !channel.is_org_shared))
+}
+
 /** User-written text goes into Slack messages escaped, so it can't ping @channel, mention people or fake links. */
 function escape(text: string) {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
@@ -798,11 +816,11 @@ export class Workspace extends DurableObject<Env> {
     let cursor: string | undefined
     do {
       const page = await this.call<{
-        channels: { id: string; is_member: boolean; is_archived: boolean }[]
+        channels: SlackChannel[]
         response_metadata?: { next_cursor?: string }
       }>("conversations.list", { types: "public_channel", exclude_archived: true, limit: 200, cursor })
       for (const channel of page.channels) {
-        if (channel.is_member || channel.is_archived) continue
+        if (channel.is_member || channel.is_archived || external(channel)) continue
         try {
           await this.call("conversations.join", { channel: channel.id })
           joined++
@@ -954,6 +972,9 @@ export class Workspace extends DurableObject<Env> {
       return this.reaction(event)
     }
     if (event.type === "channel_created") {
+      // The event carries little about the channel, so look it up before joining.
+      const info = await this.call<{ channel: SlackChannel }>("conversations.info", { channel: event.channel.id }).catch(() => null)
+      if (!info || external(info.channel)) return
       await this.call("conversations.join", { channel: event.channel.id }).catch((error) =>
         console.error("join failed", event.channel.id, error),
       )
