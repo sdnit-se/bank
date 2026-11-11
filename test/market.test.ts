@@ -2,7 +2,8 @@
 // What matters most: a sale pays today's price, losses pay for gains before anything is printed, and the only coins
 // ever created are the shortfall on a profitable sale.
 import { afterEach, expect, test } from "bun:test"
-import { fetchQuote, market, portfolio, quote, tradeLine } from "../src/server/market"
+import { casinoHelp } from "../src/server/casino"
+import { fetchQuote, market, marketHelp, portfolio, quote, tradeLine } from "../src/server/market"
 import { CENTRAL, MARKET } from "../src/shared/types"
 import { A, B, clock, frozen, world as bare } from "./world"
 
@@ -228,4 +229,15 @@ test("trades read sensibly in a person's history", () => {
   expect(tradeLine({ kind: "sell", from_id: MARKET, note: "ERIC-B.ST" }, A, "58.81 coins")).toBe("+58.81 coins from selling ERIC-B.ST")
   expect(tradeLine({ kind: "tax", from_id: A, note: "trading fee" }, A, "0.50 coins")).toBe("-0.50 coins trading fee")
   expect(tradeLine({ kind: "give", from_id: A, note: null }, A, "1 coin")).toBeNull()
+})
+
+test("help only lists what is switched on", () => {
+  const open = world().config
+  expect(casinoHelp(open).join("\n")).toContain("`/bank flip 10`")
+  expect(casinoHelp(open)[0]).toBe("*casino* · bets up to 25 coins")
+  expect(marketHelp(open)[0]).toBe("*stock market* · real prices, play money, 1% a trade")
+  expect(marketHelp(open).join("\n")).toContain("`/bank sell ERIC-B.ST 20`")
+  const closed = world({ enabled: false }, { enabled: false }).config
+  expect(casinoHelp(closed)).toEqual([])
+  expect(marketHelp(closed)).toEqual([])
 })

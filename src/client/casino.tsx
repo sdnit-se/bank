@@ -6,6 +6,15 @@ import { amountText, type CasinoStats, type Config } from "../shared/types"
 import { Chart, date, number, Section, signed, Tile } from "./economy"
 
 const NAMES: Record<string, string> = { flip: "Coin flip", slots: "Slots", lottery: "Lottery", duel: "Duels" }
+/** The next daily draw, 14:00 UTC, in the viewer's own time: "today 15:00" or "tomorrow 15:00". */
+function nextDraw(now = Date.now()) {
+  const date = new Date(now)
+  const today = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 14)
+  const at = new Date(today > now ? today : today + 24 * 60 * 60 * 1000)
+  const time = at.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })
+  return `${at.toDateString() === date.toDateString() ? "today" : "tomorrow"} ${time}`
+}
+
 /** The viewer's own calendar day for a moment, as YYYY-MM-DD. */
 const localDay = (at: number) => {
   const date = new Date(at)
@@ -72,7 +81,7 @@ export function CasinoView(props: { config: Config; stats: CasinoStats | undefin
                 </Show>
               </Tile>
               <Tile label="Lottery pot" value={number(stats().pot)}>
-                {stats().tickets} tickets · {stats().draws.length} draws so far
+                {stats().tickets} tickets · next draw {nextDraw()}
               </Tile>
               <Tile label="Worst losing run" value={coldest() ? String(coldest()!.streak) : "–"}>
                 <Show when={coldest()} fallback="nobody yet">

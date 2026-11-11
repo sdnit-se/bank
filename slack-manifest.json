@@ -1,9 +1,9 @@
 {
   "display_information": {
     "name": "Bank",
-    "description": "A tiny currency for your Slack. Give coins with a reaction or /bank give.",
+    "description": "A tiny currency for our Slack, with a casino and a stock market attached.",
     "background_color": "#1a1a1a",
-    "long_description": "Everyone in your workspace starts with 100 coins. Give them away when someone helps you out: react to their message with a coin emoji, or run /bank give @someone 10. Check your balance with /bank balance and see the leaderboard with /bank top. Admins can rename the currency, change the starting balance, choose which emoji are worth what, and adjust balances at https://labs.shebang.se/bank."
+    "long_description": "Everyone starts with 100 coins. Give them away when someone helps you out: react to their message with a coin emoji, or run /bank give @someone 10. /bank balance, /bank top and /bank history show where you stand.\n\nThen lose them. /bank flip, /bank slots, /bank duel and /bank lottery are the casino. /bank buy, /bank sell and /bank portfolio trade real stocks and crypto at real prices with play money. /bank help lists everything.\n\nThe leaderboard, the state of the economy and the casino's hall of shame are at https://labs.shebang.se/bank."
   },
   "features": {
     "app_home": {

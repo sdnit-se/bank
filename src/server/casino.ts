@@ -59,6 +59,12 @@ const BETS_A_MINUTE = 10
 const LOTTERY_SHARE = 10
 
 const MENTION = /<@([UW][A-Z0-9]+)(?:\|[^>]*)?>/
+
+/** The next draw as Slack shows a time: in each reader's own time zone, with UTC for anything that can't. */
+function drawTime(now = Date.now()) {
+  const at = nextDraw(now)
+  return `<!date^${Math.floor(at / 1000)}^{date_short_pretty} at {time}|${new Date(at).toISOString().slice(11, 16)} UTC>`
+}
 const COMMANDS = new Set(["flip", "slots", "slot", "spin", "duel", "accept", "decline", "lottery", "lotto", "casino", "house"])
 
 export function setup(sql: SqlStorage) {
@@ -88,6 +94,19 @@ async function schedule(ledger: Ledger) {
 }
 
 // ---------- slash commands
+
+/** The casino's part of `/bank help`: nothing at all while it's closed. */
+export function casinoHelp(config: Config) {
+  if (!config.games.enabled) return []
+  return [
+    `*casino* · bets up to ${currency(config, config.games.maxBet)}`,
+    `\`/bank flip 10\` · double or nothing, heads unless you say tails`,
+    `\`/bank slots 10\` · three reels, up to ${SLOT_TOP} times your stake`,
+    `\`/bank duel @someone 10\` · a coin flip between you. they \`/bank accept\` or \`/bank decline\``,
+    `\`/bank lottery 5\` · five tickets for the daily draw. the next one is ${drawTime()}`,
+    `\`/bank casino\` · what the house and the pot hold`,
+  ]
+}
 
 export async function play(
   ledger: Ledger,
@@ -135,13 +154,9 @@ export async function play(
     const tickets = ledger.sql.exec<{ n: number | null }>("select sum(count) as n from tickets").one().n ?? 0
     return quiet(
       [
-        `*the casino* · bets up to ${coins(config.games.maxBet)}`,
-        `\`/bank flip 10\` · double or nothing, heads unless you say tails`,
-        `\`/bank slots 10\` · three reels, up to ${SLOT_TOP} times your stake`,
-        `\`/bank duel @someone 10\` · a coin flip between the two of you`,
-        `\`/bank lottery 5\` · five tickets for the daily draw`,
+        ...casinoHelp(config).slice(0, -1),
         `the house holds ${coins(held(ledger, HOUSE))}, the central bank ${coins(held(ledger, CENTRAL))}`,
-        `the lottery pot is ${coins(held(ledger, POT))} across ${tickets} ${tickets === 1 ? "ticket" : "tickets"}, drawn daily at 14:00 UTC`,
+        `the lottery pot is ${coins(held(ledger, POT))} across ${tickets} ${tickets === 1 ? "ticket" : "tickets"}, drawn ${drawTime()}`,
       ].join("\n"),
     )
   }
@@ -217,7 +232,7 @@ export async function play(
   const total = () => ledger.sql.exec<{ n: number | null }>("select sum(count) as n from tickets").one().n ?? 0
   if (!word) {
     return quiet(
-      `the pot is ${coins(held(ledger, POT))}. you hold ${count(input.user)} of ${total()} tickets. one coin is one ticket: \`/bank lottery 5\`. drawn daily at 14:00 UTC.`,
+      `the pot is ${coins(held(ledger, POT))}. you hold ${count(input.user)} of ${total()} tickets. one coin is one ticket: \`/bank lottery 5\`. the draw is ${drawTime()}, and every day at that time.`,
     )
   }
   const problem = await refuse("say how many tickets: `/bank lottery 5`")
@@ -235,12 +250,12 @@ export async function play(
   if (input.channel) ledger.setMeta("lottery_channel", input.channel)
   await schedule(ledger)
   return loud(
-    ticketLine(secureRand, {
+    `${ticketLine(secureRand, {
       user: me,
       tickets: `${tickets} ${tickets === 1 ? "ticket" : "tickets"}`,
       pot: coins(held(ledger, POT)),
       chance: `${Math.round((count(input.user) / total()) * 100)}%`,
-    }),
+    })} the draw is ${drawTime()}.`,
   )
 }
 

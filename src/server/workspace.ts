@@ -16,9 +16,9 @@ import {
   type Portfolio,
   toCents,
 } from "../shared/types"
-import { economy, historyLine, play, settle, setup, type Ledger } from "./casino"
+import { casinoHelp, economy, historyLine, play, settle, setup, type Ledger } from "./casino"
 import type { Env } from "./env"
-import { market, portfolio, setupMarket, tradeLine } from "./market"
+import { market, marketHelp, portfolio, setupMarket, tradeLine } from "./market"
 import { importHistory } from "./migrate"
 import { convertToCents, inCents, money as currency } from "./money"
 import { slack, SlackError } from "./slack"
@@ -1033,19 +1033,23 @@ export class Workspace extends DurableObject<Env> {
 
   private help(config: Config) {
     const emoji = config.emoji.map((item) => `:${item.name}: ${item.amount / CENTS}`).join("  ")
+    // One block per part of the bank, and only the parts that are switched on.
     return [
-      `*bank* · everyone starts with ${currency(config, config.starting)}`,
-      `\`/bank give @someone 10 for fixing the deploy\``,
-      `\`/bank balance\` · how many you have`,
-      `\`/bank top\` · leaderboard`,
-      `\`/bank history\` · your recent activity`,
-      config.games.enabled ? `\`/bank casino\` · flip, slots, duels and the lottery` : "",
-      config.market.enabled ? `\`/bank buy ERIC-B.ST 20\` · real prices, play money. also \`sell\`, \`price\`, \`portfolio\`` : "",
-      emoji ? `or react to a message to give: ${emoji}` : "",
-      `<${this.env.PUBLIC_URL}|open bank>`,
+      [
+        `*bank* · everyone starts with ${currency(config, config.starting)}`,
+        `\`/bank give @someone 10 for fixing the deploy\``,
+        emoji ? `or react to a message to give: ${emoji}` : "",
+        `\`/bank balance\` · how many you have`,
+        `\`/bank top\` · leaderboard`,
+        `\`/bank history\` · your recent activity`,
+      ],
+      casinoHelp(config),
+      marketHelp(config),
+      [`<${this.env.PUBLIC_URL}|open bank> · the leaderboard, the economy, and who the casino has ruined`],
     ]
+      .map((lines) => lines.filter(Boolean).join("\n"))
       .filter(Boolean)
-      .join("\n")
+      .join("\n\n")
   }
 
   // ---------- Slack: events

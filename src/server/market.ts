@@ -11,7 +11,7 @@
 // live one: the exchange open and a last trade minutes old. Otherwise people would buy at yesterday's close on this
 // morning's news.
 
-import { CENTRAL, CENTS, MARKET, toCents, type Portfolio } from "../shared/types"
+import { CENTRAL, CENTS, MARKET, toCents, type Config, type Portfolio } from "../shared/types"
 import type { Ledger } from "./casino"
 import { brokeLine, secureRand, type Rand } from "./games"
 import { money } from "./money"
@@ -146,6 +146,18 @@ const SOLD_DOWN: Line[] = [
 const SOLD_FLAT: Line[] = [(w) => `${w.user} sold ${w.symbol} for *${w.amount}*, exactly what went in. a round trip to nowhere, minus fees.`]
 
 // ---------- slash commands
+
+/** The market's part of `/bank help`: nothing at all while it's closed. */
+export function marketHelp(config: Config) {
+  if (!config.market.enabled) return []
+  return [
+    `*stock market* · real prices, play money, ${config.market.fee}% a trade`,
+    `\`/bank buy ERIC-B.ST 20\` · put 20 into Ericsson. \`AAPL\`, \`005930.KS\`, \`BTC-USD\` work too`,
+    `\`/bank sell ERIC-B.ST 20\` · take 20 out at today's price, or \`all\``,
+    `\`/bank portfolio\` · what you hold and what it's worth`,
+    `\`/bank price ERIC-B.ST\` · look a price up`,
+  ]
+}
 
 export async function market(ledger: Ledger, input: { sub: string; words: string[]; user: string }): Promise<Message | null> {
   if (!COMMANDS.has(input.sub)) return null
