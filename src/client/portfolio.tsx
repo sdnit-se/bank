@@ -1,7 +1,9 @@
-// The Portfolio tab: what someone holds in the stock market and what it is worth now. Trading happens in Slack.
+// The Market tab: what you hold and what it is worth now, then how everyone else is doing. Trading happens in Slack.
 
+import { Avatar } from "@opencode/ui/avatar"
 import { For, Show } from "solid-js"
-import { amountText, type Config, type Portfolio } from "../shared/types"
+import { amountText, type Config, type MarketStats, type Portfolio } from "../shared/types"
+import { number, Tile } from "./economy"
 
 const percent = (ratio: number) => `${ratio >= 0 ? "+" : "−"}${Math.abs(ratio * 100).toFixed(1)}%`
 
@@ -54,5 +56,89 @@ export function PortfolioView(props: { config: Config; portfolio: Portfolio | un
         )}
       </Show>
     </section>
+  )
+}
+
+function Investors(props: { title: string; note: string; people: MarketStats["investors"] }) {
+  return (
+    <Show when={props.people.length}>
+      <section class="card overflow-hidden">
+        <h2 class="m-0 p-4 pb-2 text-[13px] leading-5 font-[inherit]">
+          <span class="strong">{props.title}</span> <span class="faint">· {props.note}</span>
+        </h2>
+        <For each={props.people}>
+          {(person) => (
+            <div class="row flex items-center gap-3 px-4 py-2.5">
+              <Avatar src={person.image ?? undefined} fallback={person.name} size="large" />
+              <div class="flex-1 min-w-0 flex flex-col">
+                <span class="truncate">{person.name}</span>
+                <span class="faint truncate">
+                  {person.trades} {person.trades === 1 ? "trade" : "trades"} · holds {amountText(person.value)}
+                </span>
+              </div>
+              <span class="num strong" classList={{ positive: person.result > 0, danger: person.result < 0 }}>
+                {person.result > 0 ? "+" : person.result < 0 ? "−" : ""}
+                {amountText(Math.abs(person.result))}
+              </span>
+            </div>
+          )}
+        </For>
+      </section>
+    </Show>
+  )
+}
+
+/** How everyone is doing: the market's own books, the best and worst investors, and what is held. */
+export function MarketBoard(props: { stats: MarketStats | undefined }) {
+  return (
+    <Show when={props.stats?.investors.length ? props.stats : undefined}>
+      {(stats) => (
+        <>
+          <section class="card p-5 grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-5">
+            <Tile label="The market holds" value={number(stats().holds)}>
+              losses, waiting to be someone's gain
+            </Tile>
+            <Tile label="Printed" value={number(stats().printed)}>
+              for gains it couldn't cover
+            </Tile>
+            <Tile label="Fees" value={number(stats().fees)}>
+              to the central bank
+            </Tile>
+          </section>
+          <Investors title="Wolves" note="up the most" people={stats().investors.filter((person) => person.result > 0).slice(0, 5)} />
+          <Investors title="Bagholders" note="down the most" people={[...stats().investors].reverse().filter((person) => person.result < 0).slice(0, 5)} />
+          <Show when={stats().symbols.length}>
+            <section class="card overflow-hidden">
+              <table class="chart-table">
+                <thead>
+                  <tr>
+                    <th>Held</th>
+                    <th>Holders</th>
+                    <th>Put in</th>
+                    <th>Worth</th>
+                    <th>Change</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <For each={stats().symbols}>
+                    {(row) => (
+                      <tr>
+                        <td title={row.name}>{row.symbol}</td>
+                        <td>{row.holders}</td>
+                        <td>{number(row.cost)}</td>
+                        <td>{row.value === null ? "–" : number(row.value)}</td>
+                        <td classList={{ positive: row.value !== null && row.value > row.cost, danger: row.value !== null && row.value < row.cost }}>
+                          {row.value === null ? "–" : percent(row.value / row.cost - 1)}
+                        </td>
+                      </tr>
+                    )}
+                  </For>
+                </tbody>
+              </table>
+            </section>
+          </Show>
+        </>
+      )}
+    </Show>
   )
 }

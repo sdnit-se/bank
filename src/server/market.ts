@@ -11,7 +11,7 @@
 // live one: the exchange open and a last trade minutes old. Otherwise people would buy at yesterday's close on this
 // morning's news.
 
-import { CENTRAL, CENTS, MARKET, toCents, type Config, type Portfolio } from "../shared/types"
+import { CENTRAL, CENTS, MARKET, toCents, type Config, type MarketStats, type Portfolio } from "../shared/types"
 import type { Ledger } from "./casino"
 import { brokeLine, secureRand, type Rand } from "./games"
 import { money } from "./money"
@@ -304,5 +304,71 @@ export async function portfolio(ledger: Ledger, user: string): Promise<Portfolio
         }
       }),
     ),
+  }
+}
+
+/** How everyone has done, with what they still hold valued at today's prices. */
+export async function marketStats(ledger: Ledger): Promise<MarketStats> {
+  const coins = (cents: number) => cents / CENTS
+  const faces = new Map(
+    ledger.sql
+      .exec<{ id: string; name: string; image: string | null }>("select id, name, image from accounts where bot = 0")
+      .toArray()
+      .map((row) => [row.id, row]),
+  )
+  const held = ledger.sql.exec<Held & { user_id: string }>("select user_id, symbol, units, cost from positions").toArray()
+  const quotes = new Map(await Promise.all([...new Set(held.map((position) => position.symbol))].map(async (symbol) => [symbol, await quote(ledger, symbol)] as const)))
+  const worth = (position: Held) => {
+    const found = quotes.get(position.symbol)
+    return found ? Math.floor(position.units * found.price) : null
+  }
+
+  const flows = ledger.sql
+    .exec<{ user: string; bought: number; sold: number; trades: number }>(
+      `select case when kind = 'buy' then from_id else to_id end as user,
+        sum(case when kind = 'buy' then amount else 0 end) as bought,
+        sum(case when kind = 'sell' then amount else 0 end) as sold,
+        count(*) as trades
+      from entries where kind in ('buy', 'sell') group by user`,
+    )
+    .toArray()
+  // The fee on a purchase comes out of the buyer's pocket. The fee on a sale is already missing from what they got.
+  const paid = new Map(
+    ledger.sql
+      .exec<{ user: string; fees: number }>("select from_id as user, sum(amount) as fees from entries where kind = 'tax' and note = 'trading fee' and from_id != ? group by from_id", MARKET)
+      .toArray()
+      .map((row) => [row.user, row.fees]),
+  )
+  const investors = flows
+    .map((flow) => {
+      const value = held.filter((position) => position.user_id === flow.user).reduce((sum, position) => sum + (worth(position) ?? position.cost), 0)
+      return {
+        ...(faces.get(flow.user) ?? { id: flow.user, name: flow.user, image: null }),
+        result: coins(flow.sold + value - flow.bought - (paid.get(flow.user) ?? 0)),
+        value: coins(value),
+        trades: flow.trades,
+      }
+    })
+    .sort((a, b) => b.result - a.result || a.name.localeCompare(b.name))
+
+  const bySymbol = new Map<string, { symbol: string; name: string; holders: number; cost: number; value: number | null }>()
+  for (const position of held) {
+    const row = bySymbol.get(position.symbol) ?? { symbol: position.symbol, name: quotes.get(position.symbol)?.name ?? position.symbol, holders: 0, cost: 0, value: 0 }
+    const value = worth(position)
+    row.holders++
+    row.cost += position.cost
+    row.value = value === null || row.value === null ? null : row.value + value
+    bySymbol.set(position.symbol, row)
+  }
+  const total = (kind: string, note?: string) =>
+    ledger.sql.exec<{ n: number | null }>(`select sum(amount) as n from entries where kind = ?${note ? " and note = ?" : ""}`, ...(note ? [kind, note] : [kind])).one().n ?? 0
+  return {
+    holds: coins(ledger.row(MARKET)?.balance ?? 0),
+    printed: coins(total("print")),
+    fees: coins(total("tax", "trading fee")),
+    investors,
+    symbols: [...bySymbol.values()]
+      .sort((a, b) => b.cost - a.cost)
+      .map((row) => ({ ...row, cost: coins(row.cost), value: row.value === null ? null : coins(row.value) })),
   }
 }

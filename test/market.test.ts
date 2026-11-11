@@ -3,7 +3,7 @@
 // ever created are the shortfall on a profitable sale.
 import { afterEach, expect, test } from "bun:test"
 import { casinoHelp } from "../src/server/casino"
-import { fetchQuote, market, marketHelp, portfolio, quote, tradeLine } from "../src/server/market"
+import { fetchQuote, market, marketHelp, marketStats, portfolio, quote, tradeLine } from "../src/server/market"
 import { CENTRAL, MARKET } from "../src/shared/types"
 import { A, B, clock, frozen, world as bare } from "./world"
 
@@ -240,4 +240,28 @@ test("help only lists what is switched on", () => {
   const closed = world({ enabled: false }, { enabled: false }).config
   expect(casinoHelp(closed)).toEqual([])
   expect(marketHelp(closed)).toEqual([])
+})
+
+test("the market's record: who is up, who is down, what is held, and what was printed", async () => {
+  const w = world()
+  feed(100)
+  await w.say(A, "buy ERIC-B.ST 50")
+  await w.say(B, "buy ERIC-B.ST 20")
+  w.later(120)
+  await w.say(A, "sell ERIC-B.ST all")
+  w.later(90)
+
+  const stats = await marketStats(w.ledger)
+  // A put in 49.50 plus a 0.50 fee and took out 58.81. B put in 19.80 plus 0.20 and holds what is now worth 17.82.
+  expect(stats.investors.map(({ id, result, value, trades }) => ({ id, result, value, trades }))).toEqual([
+    { id: A, result: 8.81, value: 0, trades: 2 },
+    { id: B, result: -2.18, value: 17.82, trades: 1 },
+  ])
+  expect(stats.symbols).toEqual([{ symbol: "ERIC-B.ST", name: "Telefonaktiebolaget LM Ericsson (publ)", holders: 1, cost: 19.8, value: 17.82 }])
+  // A's sale was worth 59.40 against 69.30 in the market, so nothing had to be printed.
+  expect(stats).toMatchObject({ holds: 9.9, printed: 0, fees: 1.29 })
+  expect(w.total()).toBe(200)
+
+  w.later(null)
+  expect((await marketStats(w.ledger)).symbols[0]).toMatchObject({ value: null })
 })

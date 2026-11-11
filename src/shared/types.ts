@@ -205,6 +205,20 @@ export type Position = {
 
 export type Portfolio = { positions: Position[]; fee: number; enabled: boolean }
 
+/** How everyone has done in the stock market, for the Market tab. Amounts are in coins. */
+export type MarketStats = {
+  /** What the market account holds: losses not yet paid out as someone else's gain. */
+  holds: number
+  /** Coins the market has created to pay gains it couldn't cover. */
+  printed: number
+  /** Trading fees collected for the central bank. */
+  fees: number
+  /** Best first. `result` is what they've taken out plus what they still hold, less what they put in and paid in fees. */
+  investors: (Gambler & { result: number; value: number; trades: number })[]
+  /** What is held across everyone, biggest first. `value` is null when there is no price. */
+  symbols: { symbol: string; name: string; holders: number; cost: number; value: number | null }[]
+}
+
 export type Admin = { id: string; name: string; image: string | null; source: "installer" | "added" | "slack" }
 
 export type CustomEmoji = { name: string; url: string }

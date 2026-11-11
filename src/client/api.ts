@@ -1,4 +1,4 @@
-import type { Admin, CasinoStats, Config, CustomEmoji, Economy, Entry, History, Leaderboard, Me, Portfolio } from "../shared/types"
+import type { Admin, CasinoStats, Config, CustomEmoji, Economy, Entry, History, Leaderboard, MarketStats, Me, Portfolio } from "../shared/types"
 
 export const BASE = "/bank"
 
@@ -31,6 +31,7 @@ export const api = {
   economy: () => request<Economy>("GET", "/economy"),
   portfolio: () => request<Portfolio>("GET", "/portfolio"),
   casino: () => request<CasinoStats>("GET", "/casino"),
+  market: () => request<MarketStats>("GET", "/market"),
   history: () => request<History>("GET", "/history"),
   people: () => request<Person[]>("GET", "/people"),
   give: (to: string, amount: number, note: string) => request<{ balance: number }>("POST", "/give", { to, amount, note }),

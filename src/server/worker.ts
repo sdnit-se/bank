@@ -242,6 +242,7 @@ async function api(request: Request, env: Env, path: string) {
   if (route === "GET /economy") return ws.economy()
   if (route === "GET /portfolio") return ws.portfolio(user)
   if (route === "GET /casino") return ws.casino()
+  if (route === "GET /market") return ws.market()
   if (route === "GET /history") return ws.history(user, "mine")
   if (route === "GET /people") return ws.people(user)
   if (route === "POST /give") {

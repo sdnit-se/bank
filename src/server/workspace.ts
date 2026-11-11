@@ -12,13 +12,14 @@ import {
   type Entry,
   type EntryKind,
   type History,
+  type MarketStats,
   type Me,
   type Portfolio,
   toCents,
 } from "../shared/types"
 import { casinoHelp, economy, historyLine, play, settle, setup, type Ledger } from "./casino"
 import type { Env } from "./env"
-import { market, marketHelp, portfolio, setupMarket, tradeLine } from "./market"
+import { market, marketHelp, marketStats, portfolio, setupMarket, tradeLine } from "./market"
 import { importHistory } from "./migrate"
 import { convertToCents, inCents, money as currency } from "./money"
 import { slack, SlackError } from "./slack"
@@ -225,6 +226,10 @@ export class Workspace extends DurableObject<Env> {
 
   async casino(): Promise<CasinoStats> {
     return casinoStats(this.ledger())
+  }
+
+  async market(): Promise<MarketStats> {
+    return marketStats(this.ledger())
   }
 
   async portfolio(viewer: Viewer): Promise<Portfolio> {

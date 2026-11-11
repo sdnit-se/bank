@@ -13,7 +13,7 @@ import { amountText, CENTRAL, currency, HOUSE, INSTITUTIONS, type Config, type C
 import { api, ApiError, BASE, type Person } from "./api"
 import { CasinoView } from "./casino"
 import { EconomyView } from "./economy"
-import { PortfolioView } from "./portfolio"
+import { MarketBoard, PortfolioView } from "./portfolio"
 
 export function App() {
   const [me, { refetch }] = createResource(() =>
@@ -223,6 +223,7 @@ function Dashboard(props: { me: Me; refresh: () => void }) {
   const [economy, economyActions] = createResource(() => api.economy())
   const [portfolio] = createResource(() => api.portfolio())
   const [casino] = createResource(() => api.casino())
+  const [market] = createResource(() => api.market())
   const reload = () => {
     props.refresh()
     leaderboardActions.refetch()
@@ -278,7 +279,7 @@ function Dashboard(props: { me: Me; refresh: () => void }) {
               <Tabs.Trigger value="casino">Casino</Tabs.Trigger>
             </Show>
             <Show when={config().market.enabled}>
-              <Tabs.Trigger value="portfolio">Portfolio</Tabs.Trigger>
+              <Tabs.Trigger value="portfolio">Market</Tabs.Trigger>
             </Show>
             <Tabs.Trigger value="give">Give</Tabs.Trigger>
             <Show when={props.me.admin}>
@@ -301,7 +302,10 @@ function Dashboard(props: { me: Me; refresh: () => void }) {
             <CasinoView config={config()} stats={casino()} />
           </Match>
           <Match when={tab() === "portfolio"}>
-            <PortfolioView config={config()} portfolio={portfolio()} />
+            <div class="flex flex-col gap-4">
+              <PortfolioView config={config()} portfolio={portfolio()} />
+              <MarketBoard stats={market()} />
+            </div>
           </Match>
           <Match when={tab() === "give"}>
             <GiveView me={props.me} done={reload} />
