@@ -19,8 +19,48 @@
       {
         "command": "/bank",
         "url": "https://labs.shebang.se/bank/slack/commands",
-        "description": "Give coins, check your balance, see the leaderboard",
-        "usage_hint": "give @someone 10 for the fix \u00b7 balance \u00b7 top \u00b7 history",
+        "description": "Give coins, or see what else Bank does",
+        "usage_hint": "give @someone 10 for the fix \u00b7 history \u00b7 casino \u00b7 help",
+        "should_escape": true
+      },
+      {
+        "command": "/bank-balance",
+        "url": "https://labs.shebang.se/bank/slack/commands",
+        "description": "How many coins you have",
+        "should_escape": true
+      },
+      {
+        "command": "/bank-top",
+        "url": "https://labs.shebang.se/bank/slack/commands",
+        "description": "The leaderboard",
+        "should_escape": true
+      },
+      {
+        "command": "/bank-flip",
+        "url": "https://labs.shebang.se/bank/slack/commands",
+        "description": "Double or nothing against the house",
+        "usage_hint": "10 \u00b7 10 tails",
+        "should_escape": true
+      },
+      {
+        "command": "/bank-slots",
+        "url": "https://labs.shebang.se/bank/slack/commands",
+        "description": "Three reels, up to 20 times your stake",
+        "usage_hint": "10",
+        "should_escape": true
+      },
+      {
+        "command": "/bank-duel",
+        "url": "https://labs.shebang.se/bank/slack/commands",
+        "description": "Flip a coin against someone for their coins",
+        "usage_hint": "@someone 10",
+        "should_escape": true
+      },
+      {
+        "command": "/bank-lottery",
+        "url": "https://labs.shebang.se/bank/slack/commands",
+        "description": "Buy tickets for the daily draw",
+        "usage_hint": "5",
         "should_escape": true
       }
     ]

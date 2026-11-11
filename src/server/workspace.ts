@@ -919,13 +919,22 @@ export class Workspace extends DurableObject<Env> {
     return { ok: true, balance: result.from ?? 0 }
   }
 
-  async command(params: { text: string; user_id: string; request: string; channel?: string | null }): Promise<SlackMessage> {
+  async command(params: {
+    text: string
+    user_id: string
+    request: string
+    channel?: string | null
+    command?: string | null
+  }): Promise<SlackMessage> {
     const fresh = this.sql
       .exec("insert or ignore into events (id, at) values (?, ?)", `command:${params.request}`, Date.now()).rowsWritten
     if (!fresh) return { response_type: "ephemeral", text: "already handled" }
     console.log("command", { user: params.user_id, text: params.text.slice(0, 200) })
     const config = this.config()
-    const text = params.text.trim()
+    // Slack shows one hint per command, so the common ones are also registered on their own: /bank-flip 10 is
+    // /bank flip 10.
+    const own = params.command?.match(/^\/bank-([a-z]+)$/)?.[1]
+    const text = `${own ?? ""} ${params.text}`.trim()
     const words = text.split(/\s+/).filter(Boolean)
     const sub = (words[0] ?? "").toLowerCase()
     const reply = (text: string): SlackMessage => ({ response_type: "ephemeral", text })

@@ -190,6 +190,7 @@ async function command(request: Request, env: Env, ctx: ExecutionContext) {
     // A signed request can be replayed within Slack's five-minute window; the signature identifies it.
     request: request.headers.get("x-slack-signature") ?? "",
     channel: params.channel_id ?? null,
+    command: params.command ?? null,
   })
   return json(message)
 }
