@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "check": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.worker.json",
+    "test": "bun test",
     "deploy": "vite build && cf deploy --prebuilt",
     "manifest": "bun scripts/manifest.ts"
   },

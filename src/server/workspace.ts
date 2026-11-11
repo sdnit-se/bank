@@ -7,12 +7,15 @@ import {
   type Admin,
   type Config,
   type CustomEmoji,
+  type Economy,
   type Entry,
   type EntryKind,
   type History,
   type Me,
 } from "../shared/types"
+import { economy, historyLine, play, settle, setup, type Ledger } from "./casino"
 import type { Env } from "./env"
+import { importHistory } from "./migrate"
 import { slack, SlackError } from "./slack"
 
 export type Install = {
@@ -178,6 +181,32 @@ export class Workspace extends DurableObject<Env> {
     if (!columns.some((column) => column.name === "gone")) {
       this.sql.exec("alter table accounts add column gone integer not null default 0")
     }
+    setup(this.sql)
+  }
+
+  /** What the casino is lent: see casino.ts. */
+  private ledger(): Ledger {
+    return {
+      sql: this.sql,
+      storage: this.ctx.storage,
+      env: this.env,
+      config: () => this.config(),
+      row: (id) => this.row(id),
+      ensure: (ids) => this.ensure(ids),
+      move: (input) => this.move(input),
+      meta: (key) => this.meta(key),
+      setMeta: (key, value) => this.setMeta(key, value),
+      call: (method, params) => this.call(method, params),
+    }
+  }
+
+  /** The daily lottery draw. */
+  async alarm() {
+    await settle(this.ledger())
+  }
+
+  async economy(): Promise<Economy> {
+    return economy(this.ledger())
   }
 
   // ---------- storage helpers
@@ -199,6 +228,7 @@ export class Workspace extends DurableObject<Env> {
     const config = { ...defaultConfig, ...this.meta<Partial<Config>>("config") }
     // Configs saved before the symbol became an emoji held a literal character.
     if (!EMOJI_NAME.test(config.symbol)) config.symbol = defaultConfig.symbol
+    config.games = { ...defaultConfig.games, ...config.games }
     return config
   }
 
@@ -702,6 +732,9 @@ export class Workspace extends DurableObject<Env> {
       .filter((item) => EMOJI_NAME.test(item.name) && item.amount > 0 && item.amount <= 1_000_000)
       .filter((item) => !names.has(item.name) && names.add(item.name))
       .slice(0, 24)
+    // A client from before the games existed sends none, and shouldn't switch them off by saving.
+    const games = input.games ?? this.config().games
+    const whole = (value: unknown, least: number) => Math.max(least, Math.min(1_000_000, Math.floor(Number(value) || 0)))
     const config: Config = {
       singular: clean(input.singular, 32).replace(/[<>&*_~`]/g, "") || defaultConfig.singular,
       plural: clean(input.plural, 32).replace(/[<>&*_~`]/g, "") || defaultConfig.plural,
@@ -711,6 +744,7 @@ export class Workspace extends DurableObject<Env> {
       starting: Math.max(0, Math.min(1_000_000, Math.floor(Number(input.starting) || 0))),
       emoji,
       notify: Boolean(input.notify),
+      games: { enabled: Boolean(games.enabled), maxBet: whole(games.maxBet, 1), reserve: whole(games.reserve, 0) },
     }
     this.setMeta("config", config)
     return config
@@ -731,6 +765,16 @@ export class Workspace extends DurableObject<Env> {
         : this.move({ from: target, to: null, amount: -amount, kind: "adjust", note, actor: viewer.id })
     if (!result.ok) throw new Error(result.reason === "insufficient" ? `they only have ${result.balance}` : "unknown person")
     return { ok: true }
+  }
+
+  /** Swaps the balance-copying adjustments from moving in for the real history of the bank this one replaced. */
+  async importHistory(viewer: Viewer, entries: Entry[]) {
+    this.assertAdmin(viewer)
+    if (this.meta("imported")) throw new Error("a history has already been imported here")
+    const result = this.ctx.storage.transactionSync(() => importHistory(this.sql, entries, this.config().emoji))
+    this.setMeta("imported", { at: Date.now(), by: viewer.id, ...result })
+    console.log("import", { by: viewer.id, ...result })
+    return result
   }
 
   /** Replaces a transaction's note. The amount and the people involved stay as they were. */
@@ -875,7 +919,7 @@ export class Workspace extends DurableObject<Env> {
     return { ok: true, balance: result.from ?? 0 }
   }
 
-  async command(params: { text: string; user_id: string; request: string }): Promise<SlackMessage> {
+  async command(params: { text: string; user_id: string; request: string; channel?: string | null }): Promise<SlackMessage> {
     const fresh = this.sql
       .exec("insert or ignore into events (id, at) values (?, ?)", `command:${params.request}`, Date.now()).rowsWritten
     if (!fresh) return { response_type: "ephemeral", text: "already handled" }
@@ -911,6 +955,8 @@ export class Workspace extends DurableObject<Env> {
       const lines = rows.map((row) => {
         const amount = currency(config, row.amount)
         const note = row.note ? ` · ${escape(row.note)}` : ""
+        const game = historyLine(row, params.user_id, amount)
+        if (game) return game
         if (row.kind === "grant") return `+${amount} starting balance`
         if (row.kind === "adjust") return row.to_id === params.user_id ? `+${amount} from an admin${note}` : `-${amount} by an admin${note}`
         if (row.kind === "refund") return row.to_id === params.user_id ? `+${amount} refunded by <@${row.from_id}>` : `-${amount} refunded to <@${row.to_id}>`
@@ -920,6 +966,10 @@ export class Workspace extends DurableObject<Env> {
     }
 
     if (sub === "admin" || sub === "settings") return reply(`<${this.env.PUBLIC_URL}|open bank>`)
+
+    // The games claim their own words before anything with a mention and a number is taken for a gift.
+    const played = await play(this.ledger(), { sub, words: words.slice(1), user: params.user_id, channel: params.channel ?? null })
+    if (played) return played
 
     // give / send / pay, or just "/bank @someone 10"
     const rest = ["give", "send", "pay", "tip"].includes(sub) ? words.slice(1) : words
@@ -951,6 +1001,7 @@ export class Workspace extends DurableObject<Env> {
       `\`/bank balance\` · how many you have`,
       `\`/bank top\` · leaderboard`,
       `\`/bank history\` · your recent activity`,
+      config.games.enabled ? `\`/bank casino\` · flip, slots, duels and the lottery` : "",
       emoji ? `or react to a message to give: ${emoji}` : "",
       `<${this.env.PUBLIC_URL}|open bank>`,
     ]

@@ -9,8 +9,9 @@ import { Tabs } from "@opencode/ui/tabs"
 import { TextInput } from "@opencode/ui/text-input"
 import { createMemo, createResource, createRoot, createSignal, For, type JSX, Match, Show, Switch } from "solid-js"
 import { createStore, reconcile, unwrap } from "solid-js/store"
-import { currency, type Config, type CustomEmoji, type Entry, type History, type Me } from "../shared/types"
+import { CENTRAL, currency, HOUSE, type Config, type CustomEmoji, type Entry, type History, type Me } from "../shared/types"
 import { api, ApiError, BASE, type Person } from "./api"
+import { EconomyView } from "./economy"
 
 export function App() {
   const [me, { refetch }] = createResource(() =>
@@ -217,10 +218,12 @@ function Dashboard(props: { me: Me; refresh: () => void }) {
   const [tab, setTab] = createSignal("leaderboard")
   const [leaderboard, leaderboardActions] = createResource(() => api.leaderboard())
   const [history, historyActions] = createResource(() => api.history())
+  const [economy, economyActions] = createResource(() => api.economy())
   const reload = () => {
     props.refresh()
     leaderboardActions.refetch()
     historyActions.refetch()
+    economyActions.refetch()
   }
   const balance = () => props.me.account?.balance ?? 0
 
@@ -260,6 +263,7 @@ function Dashboard(props: { me: Me; refresh: () => void }) {
           <Tabs.List>
             <Tabs.Trigger value="leaderboard">Leaderboard</Tabs.Trigger>
             <Tabs.Trigger value="activity">Activity</Tabs.Trigger>
+            <Tabs.Trigger value="economy">Economy</Tabs.Trigger>
             <Tabs.Trigger value="give">Give</Tabs.Trigger>
             <Show when={props.me.admin}>
               <Tabs.Trigger value="admin">Admin</Tabs.Trigger>
@@ -273,6 +277,9 @@ function Dashboard(props: { me: Me; refresh: () => void }) {
           </Match>
           <Match when={tab() === "activity"}>
             <ActivityView me={props.me} history={history()} />
+          </Match>
+          <Match when={tab() === "economy"}>
+            <EconomyView config={config()} economy={economy()} />
           </Match>
           <Match when={tab() === "give"}>
             <GiveView me={props.me} done={reload} />
@@ -380,9 +387,24 @@ function describe(entry: Entry, history: History, viewer: string | null) {
         : `${name(entry.actor)} took from ${possessive(entry.from)} balance`
     case "refund":
       return `${name(entry.from)} got back a reaction from ${name(entry.to)}`.replace(/^you got back/, "you returned")
+    case "bet":
+      return `${name(entry.from)} staked on ${entry.note === "lottery" ? "lottery tickets" : (entry.note ?? "a bet")}`
+    case "payout":
+      return `${name(entry.to)} won at ${entry.note === "lottery" ? "the lottery" : (entry.note ?? "the casino")}`
+    case "duel":
+      return `${name(entry.to)} beat ${name(entry.from)} in a duel`
+    case "sweep":
+      return "the house paid its winnings to the central bank"
+    case "stimulus":
+      return `the central bank paid ${name(entry.to)}`
     default:
       return `${name(entry.from)} gave ${name(entry.to)}${via}`
   }
+}
+
+/** Entries whose note is written by Bank and already part of the description. */
+function fixedNote(entry: Entry) {
+  return ["grant", "bet", "payout", "duel", "sweep", "stimulus"].includes(entry.kind)
 }
 
 const page = 30
@@ -409,8 +431,8 @@ function ActivityList(props: { history: History | undefined; me: Me; viewer: str
                     <span class="truncate">{describe(entry, props.history!, props.viewer)}</span>
                     <span class="faint truncate">
                       {ago(entry.at)}
-                      <Show when={entry.note && entry.kind !== "grant"}> · {entry.note}</Show>
-                      <Show when={props.onRedact && entry.note && entry.note !== "redacted" && entry.kind !== "grant"}>
+                      <Show when={entry.note && !fixedNote(entry)}> · {entry.note}</Show>
+                      <Show when={props.onRedact && entry.note && entry.note !== "redacted" && !fixedNote(entry)}>
                         {" · "}
                         <button type="button" class="link bg-transparent border-0 p-0 cursor-pointer" onClick={() => props.onRedact!(entry.id)}>
                           redact
@@ -771,8 +793,10 @@ function AdminView(props: { me: Me; changed: () => void }) {
       <SettingsPanel me={props.me} changed={props.changed} />
       <EmojiPack domain={props.me.team.domain} />
       <AdjustPanel me={props.me} changed={props.changed} />
+      <PrintPanel me={props.me} changed={props.changed} />
       <AdminsPanel me={props.me} />
       <ChannelsPanel />
+      <ImportPanel changed={props.changed} />
       <AllActivityPanel me={props.me} />
     </div>
   )
@@ -857,6 +881,46 @@ function SettingsPanel(props: { me: Me; changed: () => void }) {
             aria-label="Message people when they get a reaction gift"
           />
         </div>
+
+        <div class="setting">
+          <div class="min-w-0">
+            <div class="strong">Casino</div>
+            <div class="muted">
+              Coin flips, slots, duels and a daily lottery, all listed under <Code>/bank casino</Code>. Results are posted
+              where the command is run. The house needs a bankroll before it will take a bet.
+            </div>
+          </div>
+          <Toggle checked={draft.games.enabled} onChange={(value: boolean) => setDraft("games", "enabled", value)} aria-label="Open the casino" />
+        </div>
+
+        <Show when={draft.games.enabled}>
+          <div class="flex flex-col gap-2">
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <Label text="Biggest bet">
+                <TextInput
+                  class="w-full"
+                  numeric
+                  inputmode="numeric"
+                  value={String(draft.games.maxBet)}
+                  onInput={(event) => setDraft("games", "maxBet", Number(event.currentTarget.value.replace(/[^0-9]/g, "")) || 0)}
+                />
+              </Label>
+              <Label text="House reserve">
+                <TextInput
+                  class="w-full"
+                  numeric
+                  inputmode="numeric"
+                  value={String(draft.games.reserve)}
+                  onInput={(event) => setDraft("games", "reserve", Number(event.currentTarget.value.replace(/[^0-9]/g, "")) || 0)}
+                />
+              </Label>
+            </div>
+            <p class="faint m-0">
+              The house keeps its reserve to pay winners. At the daily draw, whatever it won beyond that goes to the central
+              bank, which puts a tenth of what it holds into the lottery pot.
+            </p>
+          </div>
+        </Show>
 
         <div class="flex flex-col gap-2">
           <div class="flex items-baseline justify-between gap-3">
@@ -1020,6 +1084,54 @@ function AdjustPanel(props: { me: Me; changed: () => void }) {
   )
 }
 
+function PrintPanel(props: { me: Me; changed: () => void }) {
+  const [amount, setAmount] = createSignal("")
+  const [status, setStatus] = createSignal<{ kind: "error" | "ok"; text: string } | null>(null)
+  const run = async (target: string, name: string, sign: 1 | -1) => {
+    try {
+      await api.adjust(target, sign * Number(amount()), "monetary policy")
+      setStatus({ kind: "ok", text: `${sign > 0 ? "Printed" : "Destroyed"} ${currency(props.me.config, Number(amount()))} ${sign > 0 ? "for" : "from"} ${name}.` })
+      setAmount("")
+      props.changed()
+    } catch (error) {
+      setStatus({ kind: "error", text: (error as Error).message })
+    }
+  }
+  return (
+    <Panel
+      title="Print money"
+      description="Create coins for the casino's house or the central bank, or destroy some. Along with adjusting a balance, this is the only thing that changes how many coins exist."
+    >
+      <div class="px-4 pb-4 flex flex-col gap-4 max-w-[520px]">
+        <Label text="Amount" class="max-w-[112px]">
+          <TextInput
+            class="w-full"
+            numeric
+            inputmode="numeric"
+            placeholder="500"
+            value={amount()}
+            onInput={(event) => setAmount(event.currentTarget.value.replace(/[^0-9]/g, ""))}
+          />
+        </Label>
+        <div class="flex flex-wrap items-center gap-2">
+          <Button variant="contrast" disabled={!amount()} onClick={() => run(HOUSE, "the house", 1)}>
+            Print for the house
+          </Button>
+          <Button variant="neutral" disabled={!amount()} onClick={() => run(CENTRAL, "the central bank", 1)}>
+            Print for the central bank
+          </Button>
+          <Button variant="neutral" disabled={!amount()} onClick={() => run(CENTRAL, "the central bank", -1)}>
+            Destroy from the central bank
+          </Button>
+          <span class="ml-1">
+            <Status value={status()} />
+          </span>
+        </div>
+      </div>
+    </Panel>
+  )
+}
+
 function AdminsPanel(props: { me: Me }) {
   const [admins, { refetch }] = createResource(() => api.admins())
   const [person, setPerson] = createSignal<Person | null>(null)
@@ -1095,6 +1207,49 @@ function ChannelsPanel() {
     >
       <Show when={status()}>
         <div class="px-4 pb-4 -mt-1">
+          <Status value={status()} />
+        </div>
+      </Show>
+    </Panel>
+  )
+}
+
+function ImportPanel(props: { changed: () => void }) {
+  let input!: HTMLInputElement
+  const [status, setStatus] = createSignal<{ kind: "error" | "ok"; text: string } | null>(null)
+  const [busy, setBusy] = createSignal(false)
+  const run = async (file: File | undefined) => {
+    if (!file) return
+    setBusy(true)
+    setStatus(null)
+    try {
+      // Either a saved export with the admin history inside, or just the list of entries.
+      const data = JSON.parse(await file.text())
+      const entries = Array.isArray(data) ? data : (data.adminHistory?.entries ?? data.entries)
+      if (!Array.isArray(entries)) throw new Error("That file has no history in it.")
+      const result = await api.importHistory(entries)
+      setStatus({ kind: "ok", text: `Imported ${result.imported} entries and kept ${result.kept} from here. Nobody's balance changed.` })
+      props.changed()
+    } catch (error) {
+      setStatus({ kind: "error", text: (error as Error).message })
+    } finally {
+      setBusy(false)
+      input.value = ""
+    }
+  }
+  return (
+    <Panel
+      title="Import history"
+      description="Moved here from another Bank? Its exported history replaces the adjustments that copied balances over, so everyone's received and given totals are real again. It refuses to run if it would change what anyone holds, and it only runs once."
+      action={
+        <Button variant="neutral" disabled={busy()} onClick={() => input.click()}>
+          {busy() ? "Importing…" : "Choose export file"}
+        </Button>
+      }
+    >
+      <input ref={input} type="file" accept="application/json,.json" class="hidden" onChange={(event) => run(event.currentTarget.files?.[0])} />
+      <Show when={status()}>
+        <div class="px-4 pb-4">
           <Status value={status()} />
         </div>
       </Show>

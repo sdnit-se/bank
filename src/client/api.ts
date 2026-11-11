@@ -1,4 +1,4 @@
-import type { Admin, Config, CustomEmoji, History, Leaderboard, Me } from "../shared/types"
+import type { Admin, Config, CustomEmoji, Economy, Entry, History, Leaderboard, Me } from "../shared/types"
 
 export const BASE = "/bank"
 
@@ -28,6 +28,7 @@ export type Person = { id: string; name: string; image: string | null }
 export const api = {
   me: () => request<Me>("GET", "/me"),
   leaderboard: () => request<Leaderboard>("GET", "/leaderboard"),
+  economy: () => request<Economy>("GET", "/economy"),
   history: () => request<History>("GET", "/history"),
   people: () => request<Person[]>("GET", "/people"),
   give: (to: string, amount: number, note: string) => request<{ balance: number }>("POST", "/give", { to, amount, note }),
@@ -39,5 +40,6 @@ export const api = {
   removeAdmin: (id: string) => request("DELETE", "/admin/admins", { id }),
   emoji: () => request<CustomEmoji[]>("GET", "/admin/emoji"),
   redact: (id: number) => request("POST", "/admin/redact", { id }),
+  importHistory: (entries: Entry[]) => request<{ imported: number; kept: number; reactions: number }>("POST", "/admin/import", { entries }),
   join: () => request<{ joined: number }>("POST", "/admin/join"),
 }

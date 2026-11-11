@@ -1,4 +1,4 @@
-import type { Config } from "../shared/types"
+import type { Config, Entry } from "../shared/types"
 import type { Env } from "./env"
 import { botScopes, decodeJwt, sign, slack, unsign, verified } from "./slack"
 import type { EventEnvelope, Viewer } from "./workspace"
@@ -189,6 +189,7 @@ async function command(request: Request, env: Env, ctx: ExecutionContext) {
     user_id: params.user_id,
     // A signed request can be replayed within Slack's five-minute window; the signature identifies it.
     request: request.headers.get("x-slack-signature") ?? "",
+    channel: params.channel_id ?? null,
   })
   return json(message)
 }
@@ -237,6 +238,7 @@ async function api(request: Request, env: Env, path: string) {
   }
   if (route === "GET /me") return ws.me(user, viewer.team)
   if (route === "GET /leaderboard") return ws.leaderboard()
+  if (route === "GET /economy") return ws.economy()
   if (route === "GET /history") return ws.history(user, "mine")
   if (route === "GET /people") return ws.people(user)
   if (route === "POST /give") {
@@ -249,6 +251,7 @@ async function api(request: Request, env: Env, path: string) {
     const input = await body<{ to: string; amount: number; note?: string }>()
     return ws.adjust(user, input.to, Number(input.amount), input.note?.trim() || null)
   }
+  if (route === "POST /admin/import") return ws.importHistory(user, (await body<{ entries: Entry[] }>()).entries)
   if (route === "POST /admin/redact") return ws.redact(user, Number((await body<{ id: number }>()).id))
   if (route === "GET /admin/admins") return ws.admins(user)
   if (route === "POST /admin/admins") return ws.addAdmin(user, (await body<{ id: string }>()).id).then(() => ({ ok: true }))

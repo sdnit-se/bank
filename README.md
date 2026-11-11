@@ -12,6 +12,19 @@ Live at https://labs.shebang.se/bank. Forked from https://github.com/anomalyco/b
 
 Slack doesn't let apps upload custom emoji, so workspaces add the coin images themselves. The default pack is in `public/emoji` (rendered by `scripts/emoji.ts`).
 
+## What this fork adds
+
+- **A casino**, off until an admin opens it: `/bank flip`, `/bank slots`, `/bank duel`, `/bank lottery`, all listed by
+  `/bank casino`. Games move coins and never create or destroy them. Stakes go to the house or the lottery pot; what
+  the house wins beyond its reserve goes to a central bank at the daily draw, which puts a tenth of what it holds
+  back into the pot.
+- **An Economy tab**: money supply, GDP (coins given between people), inflation, and who holds what.
+- **Import history**, for a workspace that moved here from another Bank and wants its received and given totals back.
+
+`src/server/games.ts` has the odds and the wording, `src/server/casino.ts` the parts that touch the ledger, and
+`src/server/migrate.ts` the import. `bun test` checks the payout maths and that no game changes the number of coins.
+The art is drawn by `bun scripts/brand.ts`.
+
 ## Layout
 
 - `src/server/worker.ts`: routes, Slack OAuth (install and Sign in with Slack), request signatures, the JSON API

@@ -410,3 +410,76 @@ a[data-component="button-v2"] {
   white-space: nowrap;
   flex-shrink: 0;
 }
+
+/* Charts. One series each, in a single blue that holds up on both the light and the dark surface. */
+.chart-grid {
+  stroke: var(--v2-border-border-muted);
+  stroke-width: 1;
+}
+
+.chart-axis {
+  fill: var(--v2-text-text-faint);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-line {
+  fill: none;
+  stroke: var(--v2-blue-600);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.chart-fill {
+  fill: var(--v2-blue-600);
+}
+
+.chart-crosshair {
+  stroke: var(--v2-border-border-strong);
+  stroke-width: 1;
+}
+
+.chart-dot {
+  fill: var(--v2-blue-600);
+  stroke: var(--v2-background-bg-base);
+  stroke-width: 2;
+}
+
+.chart-tip {
+  position: absolute;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 4px 8px;
+  white-space: nowrap;
+  pointer-events: none;
+  background: var(--v2-background-bg-base);
+  border: 0.5px solid var(--v2-border-border-base);
+  border-radius: 6px;
+  box-shadow: var(--v2-elevation-raised);
+}
+
+.chart-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-table th,
+.chart-table td {
+  padding: 6px 16px;
+  text-align: right;
+  border-top: 0.5px solid var(--v2-border-border-muted);
+}
+
+.chart-table th {
+  font-weight: inherit;
+  color: var(--v2-text-text-faint);
+}
+
+.chart-table th:first-child,
+.chart-table td:first-child {
+  text-align: left;
+}
