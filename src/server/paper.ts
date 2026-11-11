@@ -1,9 +1,8 @@
 // The morning paper: one post after the daily round instead of an announcement for every little thing. It reads the
-// last day off the ledger and says what happened and why, the way someone who knows how the bank works would tell a
-// colleague: the real odds, where the coins went, and the occasional aside. The jokes are meant to be true.
-// Wording only: no coins move here. A day with nothing to report gets no paper.
+// last day off the ledger and gives each thing that happened a headline and a line about it. It doesn't explain how
+// the bank works; `/bank help` does that. Wording only: no coins move here. A day with nothing to report gets no paper.
 
-import { BONDS, CENTRAL, CENTS, HOUSE, POOLS, POT } from "../shared/types"
+import { BONDS, CENTRAL, HOUSE, POOLS, POT } from "../shared/types"
 import type { matureBonds } from "./bonds"
 import { say, secureRand, type Line } from "./games"
 import { held, section, type Block, type Ledger } from "./ledger"
@@ -12,6 +11,7 @@ import { money } from "./money"
 const NAME = "THE SHEBANG TIMES"
 const DAY = 24 * 60 * 60 * 1000
 const today = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Stockholm", weekday: "long", day: "numeric", month: "long", year: "numeric" })
+const weekday = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Stockholm", weekday: "long" })
 
 /** What the daily round did, which the ledger alone doesn't spell out. */
 export type Round = {
@@ -23,34 +23,63 @@ export type Round = {
   honours: { user_id: string; title: string }[]
 }
 
-/** Sentences that run most days have more than one way of being said. */
+/** What goes under each headline. Anything that happens most days has a few ways of being said. */
 const COPY = {
-  ahead: [
-    (w) => `${w.who} is up ${w.amount}. The textbook move is to stop now.`,
-    (w) => `${w.who} won the most, ${w.amount}. At this sample size every strategy looks like skill.`,
+  lottery: [
+    (w) => `${w.winner} held ${w.mine} of the ${w.sold} tickets, a ${w.chance} shot, and will now explain to everyone that it was a system.`,
+    (w) => `A ${w.chance} chance came in for ${w.winner}. The other ${w.rest} tickets have been thanked for their contribution to ${w.winner}'s net worth.`,
+    (w) => `${w.winner} won on ${w.mine} of ${w.sold} tickets. Everyone else is reminded that the lottery is a tax on people who are bad at maths, paid to someone who is also bad at maths.`,
+  ],
+  lotteryAlone: [(w) => `${w.winner} bought every ticket in the draw and then won it. Flawless risk management (the competition was nobody).`],
+  robbed: [
+    () => `They robbed a casino they could have just beaten at coin flips, at worse odds, and it worked, so now it's a strategy.`,
+    () => `The house has reviewed the footage and concluded that it was, in fact, robbed. Insurers have been notified (there are no insurers).`,
+  ],
+  foiled: [
+    () => `They tried to rob an institution that takes everyone's money legally and with far less effort. Lessons were not learned.`,
+    () => `It turns out the house is better at taking money than at having it taken. The crew is said to be regrouping.`,
   ],
   houseUp: [
-    (w) => `The house kept ${w.hold} of it against an edge of 2% to 5%, so most of today was variance, the house's kind.`,
-    (w) => `The house kept ${w.hold} of it. The odds are built for 2% to 5%; the rest is luck, the one thing it doesn't need.`,
+    (w) => `${w.who} personally financed ${w.amount} of it, and would like it known that the plan was working right up until it wasn't.`,
+    (w) => `${w.who} led the donations with ${w.amount}. Buy high, sell low, bet on red: tradition is tradition.`,
+    (w) => `It kept ${w.hold} of everything staked (it's meant to keep about 3%), mostly thanks to ${w.who}, who is down ${w.amount} and feels due.`,
   ],
   houseDown: [
-    (w) => `The house paid out more than it took in. ${w.bets} is not a sample; a few hundred will be.`,
-    (w) => `The house paid out more than it took in, which the law of large numbers permits in the short run. ${w.bets} is the short run.`,
+    (w) => `${w.who} took ${w.amount} off it and is going to be unbearable about it. The house would like to stress that this is temporary. (It always is.)`,
+    (w) => `${w.who} is up ${w.amount}. The smart move is to stop. See you at the roulette table, ${w.who}.`,
+    (w) => `The house congratulates ${w.who} on the ${w.amount}, through its teeth, and looks forward to having it back by Friday.`,
   ],
-  thanks: [() => `Still the only coins here that anyone earned.`, () => `The part of the economy the rest is a distraction from.`],
-  // Each of these is how the bank actually works.
-  footnote: [
-    () => `A coin flip lands your way 49% of the time, the other way 49%, and on its edge 2%, which the house keeps. It is the fairest game here and still not fair.`,
-    () => `The randomness is the platform's cryptographic generator, with the top sliver of the range thrown away so low numbers aren't slightly likelier. So no, it isn't rigged.`,
-    () => `Balances are whole numbers of cents, because money and floating point should never be left alone together.`,
-    () => `The house only takes a bet it could pay in full if you won. Several real banks have been run on looser terms.`,
-    () => `Slots return 95% over time. "Over time" is carrying most of that sentence.`,
-    () => `Nothing in the casino creates or destroys coins. You are all gambling with each other's money, slowly.`,
-    () => `The draw is at 09:00 in Stockholm all year. The code finds it by stepping forward an hour at a time until the clock says nine, which is one way to handle daylight saving.`,
-    () => `A roulette number pays 36 times on a wheel with 37 pockets. The missing pocket is the entire business.`,
-    () => `Coins in a bond can't be bet, given away or taxed as wealth. Finance calls this a lock-up. Here it is the only known cure for blackjack.`,
-    () => `Every balance can be rebuilt from the list of transactions, which is the real record. The balances are a cache, with everything that implies.`,
+  thanks: [
+    (w) => `${w.who} was thanked the most (${w.amount}), presumably for doing actual work. Unusual behaviour for a casino, but we allow it.`,
+    (w) => `Most of it went to ${w.who} (${w.amount}). Wholesomeness, priced in coins, as nature intended.`,
+    (w) => `${w.who} leads with ${w.amount}. This remains, somehow, what the bank is for.`,
   ],
+  mutual: [
+    (w) => `The fraud desk notes that ${w.a} and ${w.b} gave each other coins in both directions, with no goods or services changing hands. Scandalous. (Don't commit fraud, everyone. It's mean.)`,
+    (w) => `${w.a} and ${w.b} sent each other coins both ways and ended up exactly where they started. Regulators call that round-tripping. We call it a cry for help.`,
+  ],
+  lent: [
+    (w) => `${w.rate}% a week, so ${w.yearly}% a year, from a central bank funded by a casino. What could go wrong? (Everything, but slowly.)`,
+    (w) => `Somebody here chose the safe option. In this building. We're as surprised as you are. (${w.rate}% a week, since you ask.)`,
+  ],
+  matured: [(w) => `${w.owners} lent money to the central bank and actually got it back. Nobody is more surprised than the central bank.`],
+  defaulted: [(w) => `${w.owners} got the ${w.lent} back, with ${w.paid} of the interest they were promised. In the trade this is called a default. Here it's called ${w.day}.`],
+  wealth: [
+    (w) => `Paid by ${w.payers}, for the crime of still having coins. The people asked for a wealth tax (they didn't), and the people have received.`,
+    (w) => `Collected from ${w.payers} who failed to lose it at blackjack in time. Let that be a lesson.`,
+  ],
+  called: [
+    (w) => `${w.who} ${w.collect} ${w.amount} for being right, a rare and poorly paid skill around here.`,
+    (w) => `${w.who} called it. The other side was wrong, in public, with money, which is how every disagreement in this office should be settled.`,
+  ],
+  asked: [(w) => `Opinions are free. Being wrong costs coins: ${w.how}`],
+  expired: [() => `Thirty days and nobody could say how it went, so the stakes went back. As a company we remain undecided on a number of things.`],
+  trades: [
+    () => `Buy high, sell low, as tradition demands.`,
+    () => `All placed by people who also lose at coin flips. Past performance, etc.`,
+    () => `None of this is financial advice, mostly because none of it was advisable.`,
+  ],
+  bought: [() => `Finally, a use for the currency that isn't losing it.`, () => `The coins bought an actual thing. Nobody saw that coming, least of all the coins.`],
 } satisfies Record<string, Line[]>
 
 export async function publish(ledger: Ledger, round: Round, now = Date.now()) {
@@ -112,67 +141,45 @@ export async function publish(ledger: Ledger, round: Round, now = Date.now()) {
   const stories: { head: string; body: string }[] = []
   const story = (head: string, ...body: (string | false | undefined)[]) => stories.push({ head, body: body.filter(Boolean).join(" ") })
 
+  const line = (lines: Line[], words: Record<string, string> = {}) => say(secureRand, lines, words)
+
   if (round.lottery) {
     const { winner, pot, mine, sold, tax } = round.lottery
-    const each = Math.round(pot / sold)
-    story(
-      `${at(winner)} wins the lottery: ${coins(pot)}`,
-      mine === sold ? `${at(winner)} held every ticket, so the odds were excellent.` : `${at(winner)} held ${mine} of the ${sold} tickets, a ${percent(mine, sold)} chance.`,
-      each > CENTS && `The pot came to ${coins(each)} a ticket against a price of ${coins(CENTS)}, since the central bank tops up every draw: the one game here with a positive expected return.`,
-      tax > 0 && `(${coins(tax)} went back as winnings tax.)`,
-    )
+    const words = { winner: at(winner), mine: String(mine), sold: String(sold), rest: String(sold - mine), chance: percent(mine, sold) }
+    story(`${at(winner)} wins the lottery: ${coins(pot)}`, line(mine === sold ? COPY.lotteryAlone : COPY.lottery, words), tax > 0 && `(The taxman took ${coins(tax)}.)`)
   }
   if (day.crew) {
-    const odds = "It pays three times the stake and works 24% to 32% of the time, depending on the crew."
-    if (day.robbed) story(`A heist came off: ${coins(day.robbed - day.crew)} out of the house`, odds, "Bad risk management with good results, which is how most reputations are made.")
-    else story(`A heist failed and cost its crew ${coins(day.crew)}`, odds, "This was one of the other times.")
+    if (day.robbed) story(`A heist came off: ${coins(day.robbed - day.crew)} out of the house`, line(COPY.robbed))
+    else story(`A heist failed and cost its crew ${coins(day.crew)}`, line(COPY.foiled))
   }
   if (day.bets && best && worst) {
-    const words = { hold: percent(house, day.staked), bets: count(day.bets, "bet", "bets") }
-    story(
-      house > 0 ? `The house made ${coins(house)}` : house < 0 ? `The house lost ${coins(-house)}` : "The house broke even",
-      `${words.bets}, ${coins(day.staked)} staked.`,
-      house * 20 > day.staked
-        ? say(secureRand, COPY.houseUp, words)
-        : house > 0
-          ? `The house kept ${words.hold} of it, which is the odds doing roughly what they say.`
-          : house < 0 && say(secureRand, COPY.houseDown, words),
-      house > 0 && worst[1] < 0 && `${at(worst[0])} lost the most, ${coins(-worst[1])}.`,
-      house <= 0 && best[1] > 0 && say(secureRand, COPY.ahead, { who: at(best[0]), amount: coins(best[1]) }),
-      day.duels > 0 && `${count(day.duels, "duel", "duels")}, too: a fair coin and no edge.`,
-    )
+    const off = `off ${count(day.bets, "bet", "bets").toLowerCase()}`
+    const duels = day.duels > 0 && `Also ${count(day.duels, "duel", "duels").toLowerCase()}, for those who find slot machines too intellectually demanding.`
+    if (house > 0) story(`The house made ${coins(house)} ${off}`, worst[1] < 0 && line(COPY.houseUp, { who: at(worst[0]), amount: coins(-worst[1]), hold: percent(house, day.staked) }), duels)
+    else if (house < 0) story(`The house lost ${coins(-house)} ${off}`, best[1] > 0 && line(COPY.houseDown, { who: at(best[0]), amount: coins(best[1]) }), duels)
+    else story(`The house broke even ${off}`, "Coins went in, the same coins came out, and everyone involved wasted their time very efficiently.", duels)
   }
   if (top) {
     const total = [...thanked.values()].reduce((sum, amount) => sum + amount, 0)
     const [a, b] = mutual[0] ?? []
-    story(
-      `${coins(total)} given as thanks`,
-      `${count(day.thanks, "thank-you", "thank-yous")}, and ${at(top[0])} got the most (${coins(top[1])}).`,
-      a && b
-        ? `${at(a)} and ${at(b)} gave each other coins in both directions, which nets to nothing and counts twice toward GDP. Energy traders called this round-tripping. Here it is being nice, so we allow it.`
-        : say(secureRand, COPY.thanks, {}),
-    )
+    story(`${coins(total)} given as thanks`, line(COPY.thanks, { who: at(top[0]), amount: coins(top[1]) }), a && b && line(COPY.mutual, { a: at(a), b: at(b) }))
   }
   const rate = config.taxes.interest
   if (round.matured) {
     const { owners, lent, paid, short } = round.matured
-    if (short) story("The central bank came up short on bond interest", `${names(owners)} got ${coins(lent)} back with ${coins(paid)} in interest, less than promised. What was lent was never at risk; the interest depended on reserves the bank didn't have. Strictly, a default.`)
-    else story(`Bonds paid out: ${coins(lent)} back, ${coins(paid)} in interest`, `${names(owners)} lent the central bank coins for a week and got them back with interest. That is the whole idea, and it still feels suspicious in this building.`)
+    const words = { owners: names(owners), lent: coins(lent), paid: coins(paid), day: weekday.format(now) }
+    if (short) story("The central bank came up short on bond interest", line(COPY.defaulted, words))
+    else story(`Bonds paid out: ${coins(lent)} back, ${coins(paid)} in interest`, line(COPY.matured, words))
   } else if (day.lent) {
     const yearly = Math.round(((1 + rate / 100) ** 52 - 1) * 100).toLocaleString("en-GB")
-    story(`${coins(day.lent)} went into bonds`, rate > 0 && `Locked for a week at ${rate}%, or ${yearly}% a year compounded, paid from the central bank's reserves if it has them.`, "A bond with credit risk, issued by an institution funded by a casino.")
+    story(`${coins(day.lent)} went into bonds`, rate > 0 && line(COPY.lent, { rate: String(rate), yearly }))
   }
-  if (round.wealth?.collected) {
-    story(
-      `Wealth tax: ${coins(round.wealth.collected)} from ${count(round.wealth.payers, "person", "people").toLowerCase()}`,
-      `${config.taxes.wealth}% of whatever anyone holds above ${coins(config.taxes.wealthAbove)}, once a week. Coins in bonds don't count, which is the policy and not a loophole. (We wrote it.)`,
-    )
-  }
-  if (callers.size) story(`An office bet settled: ${names([...callers])} ${callers.size === 1 ? "collects" : "collect"} ${coins(day.pooled)}`, "No bookmaker's cut: the side that was wrong pays the side that was right.")
-  if (asked.length) story(`New office bet: "${asked[0]!.question}"`, asked.map((pool) => `\`/bank pool ${pool.id}\` to take a side on #${pool.id}.`).join(" "), "The payout is set by whoever disagrees with you.")
-  if (round.expired.length) story(`"${round.expired[0]}" expired unanswered`, "Thirty days without a ruling, so every stake went back. Some questions are not decidable.")
-  if (day.trades) story(`${count(day.trades, "trade", "trades")} on the stock market, ${coins(day.traded)}`, "Real prices, play money. Losses pay other people's gains, and when they don't cover it the market prints the difference.")
-  if (bought.length) story(bought[0]!, ...bought.slice(1, 6).map((line) => `${line}.`), "The first transaction here an economist would recognise: money, for a thing.")
+  if (round.wealth?.collected) story(`Wealth tax: ${coins(round.wealth.collected)}`, line(COPY.wealth, { payers: count(round.wealth.payers, "person", "people").toLowerCase() }))
+  if (callers.size) story(`An office bet settled for ${coins(day.pooled)}`, line(COPY.called, { who: names([...callers]), collect: callers.size === 1 ? "collects" : "collect", amount: coins(day.pooled) }))
+  if (asked.length) story(`New office bet: "${asked[0]!.question}"`, line(COPY.asked, { how: asked.map((pool) => `\`/bank pool ${pool.id}\``).join(", ") }))
+  if (round.expired.length) story(`"${round.expired[0]}" expired unanswered`, line(COPY.expired))
+  if (day.trades) story(`${count(day.trades, "trade", "trades")} on the stock market, ${coins(day.traded)}`, line(COPY.trades))
+  if (bought.length) story(bought[0]!, ...bought.slice(1, 6).map((item) => `${item}.`), line(COPY.bought))
   if (round.honours.length) {
     const more = round.honours.length > 8 && `And ${round.honours.length - 8} more, all under \`/bank titles\`.`
     story("New titles", ...round.honours.slice(0, 8).map((honour) => `${at(honour.user_id)} is now *${honour.title}*.`), more)
@@ -184,14 +191,13 @@ export async function publish(ledger: Ledger, round: Round, now = Date.now()) {
   const supply = ledger.sql.exec<{ n: number }>("select sum(balance) as n from accounts").one().n
   const figure = (id: string) => coins(held(ledger, id)).split(" ")[0]
   const glance = `${coins(supply)} in existence · the house holds ${figure(HOUSE)} · the central bank ${figure(CENTRAL)} · the lottery pot ${figure(POT)} · ${figure(BONDS)} in bonds`
-  const footnote = `_Footnote:_ ${say(secureRand, COPY.footnote, {})}`
-  const text = [`*${NAME}* · ${masthead}`, ...stories.map((item) => `*${item.head}*\n${item.body}`), footnote].join("\n\n")
+  const text = [`*${NAME}* · ${masthead}`, ...stories.map((item) => `*${item.head}*\n${item.body}`)].join("\n\n")
   const blocks: Block[] = [
     { type: "header", text: { type: "plain_text", text: NAME } },
     { type: "context", elements: [{ type: "mrkdwn", text: masthead }] },
     ...stories.map((item) => section(`*${item.head}*\n${item.body}`)),
     { type: "divider" },
-    { type: "context", elements: [{ type: "mrkdwn", text: footnote }, { type: "mrkdwn", text: glance }] },
+    { type: "context", elements: [{ type: "mrkdwn", text: glance }] },
   ]
   const posted = await ledger.call("chat.postMessage", { channel, text, blocks, unfurl_links: false }).then(
     () => true,

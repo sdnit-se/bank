@@ -22,8 +22,7 @@ Slack doesn't let apps upload custom emoji, so workspaces add the coin images th
   together (`/bank heist 10`, `src/server/tables.ts`), and office bets on a yes-or-no question, where whoever called
   it splits the pot (`/bank pool will the demo work?`, `src/server/pools.ts`).
 - **A morning paper.** One post after the 09:00 round reports the last day off the ledger, in place of an
-  announcement for every little thing, with the odds and the mechanics behind each item
-  (`src/server/paper.ts`).
+  announcement for every little thing (`src/server/paper.ts`).
 - **Titles**, each one question asked of the ledger once a day (`/bank titles`, `src/server/titles.ts`), and **a
   shop** where coins buy what an admin has put a price on (`/bank shop`, `src/server/shop.ts`).
 - **An Economy tab**: money supply, GDP (coins given between people), inflation, and who holds what.
