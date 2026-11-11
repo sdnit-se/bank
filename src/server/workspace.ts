@@ -27,6 +27,7 @@ import { convertToCents, inCents, money as currency } from "./money"
 import { slack, SlackError } from "./slack"
 import { casinoStats, sources } from "./stats"
 import { bounties, bountyClick, bountyHelp } from "./bounties"
+import { refreshFrontPage } from "./canvas"
 import { publishHome } from "./home"
 import { shop, shopClick, shopHelp } from "./shop"
 import { interact } from "./tables"
@@ -223,12 +224,19 @@ export class Workspace extends DurableObject<Env> {
   /** A click on a button under one of Bank's messages. */
   async interaction(input: { user: string; action: string; value: string }): Promise<SlackMessage> {
     const ledger = this.ledger()
-    return (await shopClick(ledger, input)) ?? (await bountyClick(ledger, input)) ?? interact(ledger, input)
+    return this.changed((await shopClick(ledger, input)) ?? (await bountyClick(ledger, input)) ?? (await interact(ledger, input)))
   }
 
   /** The daily round. */
   async alarm() {
     await settle(this.ledger())
+    await refreshFrontPage(this.ledger())
+  }
+
+  /** Something public happened: bring the front page up to date, without holding up the answer. */
+  private changed(message: SlackMessage) {
+    if (message.response_type === "in_channel") this.ctx.waitUntil(refreshFrontPage(this.ledger()))
+    return message
   }
 
   async economy(): Promise<Economy> {
@@ -718,6 +726,7 @@ export class Workspace extends DurableObject<Env> {
       account: row ? this.account(row) : null,
       sources: this.sourcesOf(viewer.id),
       config,
+      canvasProblem: this.meta<string>("canvas_problem"),
     }
   }
 
@@ -817,6 +826,8 @@ export class Workspace extends DurableObject<Env> {
     const rateBefore = this.settings().taxes.interest
     this.setMeta("config", config)
     await announceRate(this.ledger(), rateBefore, config.taxes.interest)
+    // The front page lives in the bank's channel, and shows the shop and the rates, so it follows any change here.
+    await refreshFrontPage(this.ledger())
     // The daily alarm settles the house, draws the lottery and collects the wealth tax, so make sure one is coming.
     if (config.games.enabled || config.taxes.wealth > 0) await schedule(this.ledger())
     return config
@@ -1087,15 +1098,15 @@ export class Workspace extends DurableObject<Env> {
 
     // The games claim their own words before anything with a mention and a number is taken for a gift.
     const played = await play(this.ledger(), { sub, words: words.slice(1), user: params.user_id, channel: params.channel ?? null })
-    if (played) return played
+    if (played) return this.changed(played)
     const traded = await market(this.ledger(), { sub, words: words.slice(1), user: params.user_id })
-    if (traded) return traded
+    if (traded) return this.changed(traded)
     const saved = await bonds(this.ledger(), { sub, words: words.slice(1), user: params.user_id, channel: params.channel ?? null })
-    if (saved) return saved
+    if (saved) return this.changed(saved)
     const posted = await bounties(this.ledger(), { sub, words: words.slice(1), user: params.user_id, channel: params.channel ?? null })
-    if (posted) return posted
+    if (posted) return this.changed(posted)
     const sold = await shop(this.ledger(), { sub, words: words.slice(1), user: params.user_id })
-    if (sold) return sold
+    if (sold) return this.changed(sold)
     const earned = titles(this.ledger(), { sub, user: params.user_id })
     if (earned) return earned
 
@@ -1115,10 +1126,10 @@ export class Workspace extends DurableObject<Env> {
         .slice(0, 280) || null
     const result = await this.transfer(params.user_id, to, amount, note, "give")
     if (!result.ok) return reply(result.message)
-    return {
+    return this.changed({
       response_type: "in_channel",
       text: `:${config.symbol}: <@${params.user_id}> gave <@${to}> *${currency(config, amount)}*${note ? ` · ${escape(note)}` : ""}`.trim(),
-    }
+    })
   }
 
   private help(config: Config) {
@@ -1224,6 +1235,7 @@ export class Workspace extends DurableObject<Env> {
       }
       return
     }
+    this.ctx.waitUntil(refreshFrontPage(this.ledger()))
     if (config.notify) {
       const where = link ? ` for <${link}|your message>` : ""
       await this.call("chat.postMessage", {

@@ -8,6 +8,7 @@ export const botScopes = [
   "team:read",
   "channels:read",
   "channels:join",
+  "canvases:write",
 ]
 
 export class SlackError extends Error {

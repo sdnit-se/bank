@@ -27,6 +27,8 @@ Slack doesn't let apps upload custom emoji, so workspaces add the coin images th
   anyone can chip in. A paid bounty counts as a thank-you (`src/server/bounties.ts`).
 - **A Home tab** in Slack with your balance, titles, the bounty board, open bets, bonds and the shop
   (`src/server/home.ts`).
+- **A canvas** in the bank's channel showing where things stand: the leaderboard, the bounty board, open bets and
+  the rates, rewritten after anything public happens (`src/server/canvas.ts`).
 - **Titles**, each one question asked of the ledger once a day (`/bank titles`, `src/server/titles.ts`), and **a
   shop** where coins buy what an admin has put a price on (`/bank shop`, `src/server/shop.ts`).
 - **An Economy tab**: money supply, GDP (coins given between people), inflation, and who holds what.

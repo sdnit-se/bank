@@ -1038,8 +1038,11 @@ function SettingsPanel(props: { me: Me; changed: () => void }) {
 
         <div class="setting">
           <div class="min-w-0">
-            <div class="strong">Morning paper</div>
-            <div class="muted">Where Bank posts the day's news at 09:00, and anything else it has to announce.</div>
+            <div class="strong">Bank's channel</div>
+            <div class="muted">Where Bank posts the morning paper and its other announcements, and keeps a canvas showing where things stand.</div>
+            <Show when={props.me.canvasProblem}>
+              <div class="danger mt-1">{props.me.canvasProblem}</div>
+            </Show>
           </div>
           <Select
             class="shrink-0 max-w-[50%]"

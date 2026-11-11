@@ -166,6 +166,8 @@ export type Me = {
   config: Config
   /** Image URLs for the workspace's custom emoji used by the config (the symbol and the reactions). */
   emoji: Record<string, string>
+  /** Why Bank couldn't put its canvas in the bank's channel, if it couldn't. */
+  canvasProblem: string | null
 }
 
 export const EMOJI_NAME = /^[a-z0-9_\-+'.]+$/
