@@ -33,15 +33,20 @@ export function sources(ledger: Ledger, user: string): Sources {
   return { colleagues: row.colleagues, casino: row.casino, market: row.market + row.held, taxes: row.taxes }
 }
 
-export function casinoStats(ledger: Ledger): CasinoStats {
-  const coins = (cents: number) => cents / CENTS
+/** Looks people up by id, for putting a name and a face on a figure. */
+export function people(ledger: Ledger) {
   const faces = new Map(
     ledger.sql
-      .exec<{ id: string; name: string; image: string | null }>("select id, name, image from accounts where bot = 0")
+      .exec<Gambler>("select id, name, image from accounts where bot = 0")
       .toArray()
       .map((row) => [row.id, row]),
   )
-  const who = (id: string): Gambler => faces.get(id) ?? { id, name: id, image: null }
+  return (id: string): Gambler => faces.get(id) ?? { id, name: id, image: null }
+}
+
+export function casinoStats(ledger: Ledger): CasinoStats {
+  const coins = (cents: number) => cents / CENTS
+  const who = people(ledger)
 
   // Every stake against the house, with what it paid: the next payout to the same person at the same game. That is
   // the very next entry for most games, and comes when the hand is over in blackjack.

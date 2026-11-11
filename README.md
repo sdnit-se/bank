@@ -33,7 +33,6 @@ Slack doesn't let apps upload custom emoji, so workspaces add the coin images th
 - **Cents.** The ledger counts in hundredths of a coin (`src/server/money.ts`), so `/bank give @someone 0.5` works and
   a tax or a share price can move less than a whole coin. People still type and read coins; reactions and lottery
   tickets stay whole. A ledger kept in whole coins is converted once, on the first start of this version.
-- **Import history**, for a workspace that moved here from another Bank and wants its received and given totals back.
 
 `src/server/games.ts` has the odds and the wording, `src/server/casino.ts` the parts that touch the ledger, and
 `src/server/migrate.ts` the import. `bun test` checks the payout maths and that no game changes the number of coins.

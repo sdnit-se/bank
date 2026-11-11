@@ -20,7 +20,6 @@ import {
 import { casinoHelp, economy, historyLine, play, schedule, settle, setup, type Ledger } from "./casino"
 import type { Env } from "./env"
 import { market, marketHelp, marketStats, portfolio, setupMarket, tradeLine } from "./market"
-import { importHistory } from "./migrate"
 import { convertToCents, inCents, money as currency } from "./money"
 import { slack, SlackError } from "./slack"
 import { casinoStats, sources } from "./stats"
@@ -823,18 +822,6 @@ export class Workspace extends DurableObject<Env> {
     const result = this.ctx.storage.transactionSync(() => stimulus(this.ledger(), amount, viewer.id))
     console.log("stimulus", { by: viewer.id, ...result })
     return { each: result.each / CENTS, people: result.people }
-  }
-
-  /** Swaps the balance-copying adjustments from moving in for the real history of the bank this one replaced. */
-  async importHistory(viewer: Viewer, entries: Entry[]) {
-    this.assertAdmin(viewer)
-    if (this.meta("imported")) throw new Error("a history has already been imported here")
-    // The file is in coins, like everything else that comes in from outside.
-    const inside = (entries ?? []).map((entry) => ({ ...entry, amount: toCents(entry.amount) ?? Number.NaN }))
-    const result = this.ctx.storage.transactionSync(() => importHistory(this.sql, inside, this.config().emoji))
-    this.setMeta("imported", { at: Date.now(), by: viewer.id, ...result })
-    console.log("import", { by: viewer.id, ...result })
-    return result
   }
 
   /** Replaces a transaction's note. The amount and the people involved stay as they were. */

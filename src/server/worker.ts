@@ -1,4 +1,4 @@
-import { toCents, type Config, type Entry } from "../shared/types"
+import { toCents, type Config } from "../shared/types"
 import type { Env } from "./env"
 import { botScopes, decodeJwt, sign, slack, unsign, verified } from "./slack"
 import type { EventEnvelope, Viewer } from "./workspace"
@@ -282,7 +282,6 @@ async function api(request: Request, env: Env, path: string) {
     return ws.adjust(user, input.to, toCents(input.amount) ?? Number.NaN, input.note?.trim() || null)
   }
   if (route === "POST /admin/stimulus") return ws.stimulus(user, toCents((await body<{ amount: number }>()).amount) ?? Number.NaN)
-  if (route === "POST /admin/import") return ws.importHistory(user, (await body<{ entries: Entry[] }>()).entries)
   if (route === "POST /admin/redact") return ws.redact(user, Number((await body<{ id: number }>()).id))
   if (route === "GET /admin/admins") return ws.admins(user)
   if (route === "POST /admin/admins") return ws.addAdmin(user, (await body<{ id: string }>()).id).then(() => ({ ok: true }))

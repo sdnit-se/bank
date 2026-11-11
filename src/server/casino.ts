@@ -33,7 +33,7 @@ import {
   type Rand,
   type Side,
 } from "./games"
-import { answerDuel, deal, DUEL_LASTS, duelOffer, hasHand, owed, playHand, type Message } from "./tables"
+import { answerDuel, deal, DUEL_LASTS, duelOffer, hasHand, loud, owed, playHand, quiet, type Message } from "./tables"
 
 type Row = { id: string; name: string; balance: number; bot: number; gone: number }
 
@@ -125,8 +125,6 @@ export async function play(
 ): Promise<Message | null> {
   if (!COMMANDS.has(input.sub)) return null
   const config = ledger.config()
-  const quiet = (text: string): Message => ({ response_type: "ephemeral", text })
-  const loud = (text: string): Message => ({ response_type: "in_channel", text })
   if (!config.games.enabled) return quiet(`the casino is closed. an admin can open it at <${ledger.env.PUBLIC_URL}|the bank>.`)
 
   const coins = (amount: number) => currency(config, amount)

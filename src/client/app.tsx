@@ -861,7 +861,6 @@ function AdminView(props: { me: Me; changed: () => void }) {
       <PrintPanel me={props.me} changed={props.changed} />
       <AdminsPanel me={props.me} />
       <ChannelsPanel />
-      <ImportPanel changed={props.changed} />
       <AllActivityPanel me={props.me} />
     </div>
   )
@@ -1351,49 +1350,6 @@ function ChannelsPanel() {
     >
       <Show when={status()}>
         <div class="px-4 pb-4 -mt-1">
-          <Status value={status()} />
-        </div>
-      </Show>
-    </Panel>
-  )
-}
-
-function ImportPanel(props: { changed: () => void }) {
-  let input!: HTMLInputElement
-  const [status, setStatus] = createSignal<{ kind: "error" | "ok"; text: string } | null>(null)
-  const [busy, setBusy] = createSignal(false)
-  const run = async (file: File | undefined) => {
-    if (!file) return
-    setBusy(true)
-    setStatus(null)
-    try {
-      // Either a saved export with the admin history inside, or just the list of entries.
-      const data = JSON.parse(await file.text())
-      const entries = Array.isArray(data) ? data : (data.adminHistory?.entries ?? data.entries)
-      if (!Array.isArray(entries)) throw new Error("That file has no history in it.")
-      const result = await api.importHistory(entries)
-      setStatus({ kind: "ok", text: `Imported ${result.imported} entries and kept ${result.kept} from here. Nobody's balance changed.` })
-      props.changed()
-    } catch (error) {
-      setStatus({ kind: "error", text: (error as Error).message })
-    } finally {
-      setBusy(false)
-      input.value = ""
-    }
-  }
-  return (
-    <Panel
-      title="Import history"
-      description="Bring over the history of the Bank this one replaced. Runs once, and never changes a balance."
-      action={
-        <Button variant="neutral" disabled={busy()} onClick={() => input.click()}>
-          {busy() ? "Importing…" : "Choose export file"}
-        </Button>
-      }
-    >
-      <input ref={input} type="file" accept="application/json,.json" class="hidden" onChange={(event) => run(event.currentTarget.files?.[0])} />
-      <Show when={status()}>
-        <div class="px-4 pb-4">
           <Status value={status()} />
         </div>
       </Show>

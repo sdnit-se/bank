@@ -1,4 +1,4 @@
-import type { Admin, CasinoStats, Config, CustomEmoji, Economy, Entry, History, Leaderboard, MarketStats, Me, Portfolio } from "../shared/types"
+import type { Admin, CasinoStats, Config, CustomEmoji, Economy, History, Leaderboard, MarketStats, Me, Portfolio } from "../shared/types"
 
 export const BASE = "/bank"
 
@@ -44,6 +44,5 @@ export const api = {
   emoji: () => request<CustomEmoji[]>("GET", "/admin/emoji"),
   redact: (id: number) => request("POST", "/admin/redact", { id }),
   stimulus: (amount: number) => request<{ each: number; people: number }>("POST", "/admin/stimulus", { amount }),
-  importHistory: (entries: Entry[]) => request<{ imported: number; kept: number; reactions: number }>("POST", "/admin/import", { entries }),
   join: () => request<{ joined: number }>("POST", "/admin/join"),
 }

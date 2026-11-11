@@ -155,9 +155,9 @@ export function nextDraw(now: number) {
 
 // ---------- what Bank says
 
-type Line = (words: Record<string, string>) => string
+export type Line = (words: Record<string, string>) => string
 
-function say(rand: Rand, lines: readonly Line[], words: Record<string, string>) {
+export function say(rand: Rand, lines: readonly Line[], words: Record<string, string>) {
   return pick(rand, lines)(words)
 }
 

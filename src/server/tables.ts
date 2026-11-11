@@ -38,8 +38,8 @@ const MINUTE = 60_000
 export const DUEL_LASTS = 10 * MINUTE
 const HAND_LASTS = 10 * MINUTE
 
-const quiet = (text: string): Message => ({ response_type: "ephemeral", text })
-const loud = (text: string): Message => ({ response_type: "in_channel", text })
+export const quiet = (text: string): Message => ({ response_type: "ephemeral", text })
+export const loud = (text: string): Message => ({ response_type: "in_channel", text })
 
 const button = (text: string, action: string, value: string, style?: Button["style"]): Button => ({
   type: "button",

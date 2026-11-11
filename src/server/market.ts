@@ -13,8 +13,10 @@
 
 import { CENTRAL, CENTS, MARKET, toCents, type Config, type MarketStats, type Portfolio } from "../shared/types"
 import type { Ledger } from "./casino"
-import { brokeLine, secureRand, type Rand } from "./games"
+import { brokeLine, say, secureRand, type Line } from "./games"
 import { money } from "./money"
+import { people } from "./stats"
+import { loud, quiet, type Message } from "./tables"
 import { levy, taxed as taxNote } from "./taxes"
 
 export type Quote = {
@@ -29,7 +31,6 @@ export type Quote = {
   open: boolean
 }
 
-type Message = { response_type: "ephemeral" | "in_channel"; text: string }
 type Held = { symbol: string; units: number; cost: number }
 
 const SYMBOL = /^[A-Z0-9][A-Z0-9.\-=^]{0,14}$/
@@ -122,9 +123,6 @@ const percent = (ratio: number) => `${ratio >= 0 ? "+" : "−"}${Math.abs(ratio 
 
 // ---------- what Bank says
 
-type Line = (words: Record<string, string>) => string
-const say = (rand: Rand, lines: Line[], words: Record<string, string>) => lines[rand(lines.length)]!(words)
-
 const BOUGHT: Line[] = [
   (w) => `${w.user} put *${w.amount}* into ${w.symbol} at ${w.price}. ${w.name} thanks you for your service.`,
   (w) => `${w.user} bought *${w.amount}* of ${w.symbol} at ${w.price}. this is not financial advice, and neither was whatever made you do that.`,
@@ -162,8 +160,6 @@ export function marketHelp(config: Config) {
 
 export async function market(ledger: Ledger, input: { sub: string; words: string[]; user: string }): Promise<Message | null> {
   if (!COMMANDS.has(input.sub)) return null
-  const quiet = (text: string): Message => ({ response_type: "ephemeral", text })
-  const loud = (text: string): Message => ({ response_type: "in_channel", text })
   const config = ledger.config()
   const coins = (cents: number) => money(config, cents)
   const me = `<@${input.user}>`
@@ -312,12 +308,7 @@ export async function portfolio(ledger: Ledger, user: string): Promise<Portfolio
 /** How everyone has done, with what they still hold valued at today's prices. */
 export async function marketStats(ledger: Ledger): Promise<MarketStats> {
   const coins = (cents: number) => cents / CENTS
-  const faces = new Map(
-    ledger.sql
-      .exec<{ id: string; name: string; image: string | null }>("select id, name, image from accounts where bot = 0")
-      .toArray()
-      .map((row) => [row.id, row]),
-  )
+  const who = people(ledger)
   const held = ledger.sql.exec<Held & { user_id: string }>("select user_id, symbol, units, cost from positions").toArray()
   const quotes = new Map(await Promise.all([...new Set(held.map((position) => position.symbol))].map(async (symbol) => [symbol, await quote(ledger, symbol)] as const)))
   const worth = (position: Held) => {
@@ -345,7 +336,7 @@ export async function marketStats(ledger: Ledger): Promise<MarketStats> {
     .map((flow) => {
       const value = held.filter((position) => position.user_id === flow.user).reduce((sum, position) => sum + (worth(position) ?? position.cost), 0)
       return {
-        ...(faces.get(flow.user) ?? { id: flow.user, name: flow.user, image: null }),
+        ...who(flow.user),
         result: coins(flow.sold + value - flow.bought - (paid.get(flow.user) ?? 0)),
         value: coins(value),
         trades: flow.trades,
