@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test"
+import { nextDraw } from "../src/shared/types"
 import { draw, flip, FLIP_PAYS, handTotal, roulette, secureRand, settleHand, SLOT_TIERS, SLOT_TOP, spin, type Rand } from "../src/server/games"
 
 /** The first call returns `first`; later ones walk through their range, so every pick gets exercised. */
@@ -67,4 +68,13 @@ test("blackjack hands are counted and settled by the usual rules", () => {
   expect(settleHand(cards(10, 9), cards(10, 6, 9))).toBe("win")
   expect(settleHand(cards(10, 8), cards(10, 8))).toBe("push")
   expect(settleHand(cards(10, 7), cards(10, 8))).toBe("lose")
+})
+
+test("the draw is at 09:00 in Stockholm, summer and winter", () => {
+  const next = (...at: [number, number, number, number]) => new Date(nextDraw(Date.UTC(...at))).toISOString().slice(0, 16)
+  expect(next(2026, 10, 11, 7)).toBe("2026-11-11T08:00")
+  expect(next(2026, 10, 11, 8)).toBe("2026-11-12T08:00")
+  expect(next(2026, 6, 1, 12)).toBe("2026-07-02T07:00")
+  // The night the clocks go forward, the draw is still at nine.
+  expect(next(2027, 2, 27, 12)).toBe("2027-03-28T07:00")
 })

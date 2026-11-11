@@ -2,10 +2,9 @@
 // rate of zero has to take nothing.
 import { afterEach, expect, test } from "bun:test"
 import { play, settle } from "../src/server/casino"
-import { nextDraw } from "../src/server/games"
 import { market } from "../src/server/market"
 import { collectWealth, levy, stimulus } from "../src/server/taxes"
-import { CENTRAL, CENTS, HOUSE, POT } from "../src/shared/types"
+import { CENTRAL, CENTS, HOUSE, nextDraw, POT } from "../src/shared/types"
 import { A, B, clock, frozen, world } from "./world"
 
 frozen()

@@ -2,17 +2,15 @@
 
 import { Avatar } from "@opencode/ui/avatar"
 import { For, Show } from "solid-js"
-import { amountText, type CasinoStats, type Config } from "../shared/types"
+import { amountText, nextDraw, type CasinoStats, type Config } from "../shared/types"
 import { Chart, date, number, Section, signed, Tile } from "./economy"
 
 const NAMES: Record<string, string> = { flip: "Coin flip", slots: "Slots", roulette: "Roulette", blackjack: "Blackjack", lottery: "Lottery", duel: "Duels" }
-/** The next daily draw, 14:00 UTC, in the viewer's own time: "today 15:00" or "tomorrow 15:00". */
-function nextDraw(now = Date.now()) {
-  const date = new Date(now)
-  const today = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 14)
-  const at = new Date(today > now ? today : today + 24 * 60 * 60 * 1000)
+/** The next daily draw in the viewer's own time: "today 09:00" or "tomorrow 09:00". */
+function drawTime() {
+  const at = new Date(nextDraw(Date.now()))
   const time = at.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })
-  return `${at.toDateString() === date.toDateString() ? "today" : "tomorrow"} ${time}`
+  return `${at.toDateString() === new Date().toDateString() ? "today" : "tomorrow"} ${time}`
 }
 
 /** The viewer's own calendar day for a moment, as YYYY-MM-DD. */
@@ -81,7 +79,7 @@ export function CasinoView(props: { config: Config; stats: CasinoStats | undefin
                 </Show>
               </Tile>
               <Tile label="Lottery pot" value={number(stats().pot)}>
-                {stats().tickets} tickets · next draw {nextDraw()}
+                {stats().tickets} tickets · next draw {drawTime()}
               </Tile>
               <Tile label="Worst losing run" value={coldest() ? String(coldest()!.streak) : "–"}>
                 <Show when={coldest()} fallback="nobody yet">

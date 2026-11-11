@@ -146,13 +146,6 @@ export function draw(rand: Rand, tickets: { user: string; count: number }[]) {
   return tickets.find((ticket) => (roll -= ticket.count) < 0)!.user
 }
 
-/** Draws are daily at 14:00 UTC, mid-afternoon in Stockholm. */
-export function nextDraw(now: number) {
-  const date = new Date(now)
-  const today = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 14)
-  return today > now ? today : today + 24 * 60 * 60 * 1000
-}
-
 // ---------- what Bank says
 
 export type Line = (words: Record<string, string>) => string

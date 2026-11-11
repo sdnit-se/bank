@@ -7,7 +7,7 @@
 // Like the rest of the ledger this counts in cents, and the settings it is handed are in cents too. The economy
 // figures are the one thing that leaves here for the web app, so they go out in coins.
 
-import { CENTRAL, CENTS, HOUSE, INSTITUTIONS, MARKET, POT, toCents, type Config, type Economy, type EntryKind } from "../shared/types"
+import { CENTRAL, CENTS, HOUSE, INSTITUTIONS, MARKET, nextDraw, POT, toCents, type Config, type Economy, type EntryKind } from "../shared/types"
 import type { Env } from "./env"
 import { money as currency } from "./money"
 import { collectWealth, levy, taxed } from "./taxes"
@@ -20,7 +20,6 @@ import {
   flip,
   FLIP_PAYS,
   flipLine,
-  nextDraw,
   parsePocket,
   roulette,
   rouletteLine,
@@ -97,9 +96,10 @@ function held(ledger: Ledger, id: string) {
   return ledger.row(id)?.balance ?? 0
 }
 
-/** The draw also settles the house and collects the wealth tax, so any bet makes sure one is coming. */
+/** The draw also settles the house and collects the wealth tax, so anything at the casino makes sure one is coming. */
 export async function schedule(ledger: Ledger) {
-  if ((await ledger.storage.getAlarm()) === null) await ledger.storage.setAlarm(nextDraw(Date.now()))
+  const next = nextDraw(Date.now())
+  if ((await ledger.storage.getAlarm()) !== next) await ledger.storage.setAlarm(next)
 }
 
 // ---------- slash commands
@@ -126,6 +126,7 @@ export async function play(
   if (!COMMANDS.has(input.sub)) return null
   const config = ledger.config()
   if (!config.games.enabled) return quiet(`the casino is closed. an admin can open it at <${ledger.env.PUBLIC_URL}|the bank>.`)
+  await schedule(ledger)
 
   const coins = (amount: number) => currency(config, amount)
   const me = `<@${input.user}>`
@@ -180,7 +181,6 @@ export async function play(
     const result = flip(rand, call)
     if (result.won) ledger.move({ from: HOUSE, to: input.user, amount: amount * FLIP_PAYS, kind: "payout", note: "flip", actor: input.user })
     const tax = result.won ? levy(ledger, { from: input.user, amount: amount * (FLIP_PAYS - 1), rate: config.taxes.winnings, note: "winnings tax" }) : 0
-    await schedule(ledger)
     return loud(flipLine(secureRand, result, { user: me, call, amount: coins(amount) }) + taxed(config, tax))
   }
 
@@ -193,7 +193,6 @@ export async function play(
     const win = amount * result.pays
     if (win > 0) ledger.move({ from: HOUSE, to: input.user, amount: win, kind: "payout", note: "slots", actor: input.user })
     const tax = levy(ledger, { from: input.user, amount: win - amount, rate: config.taxes.winnings, note: "winnings tax" })
-    await schedule(ledger)
     return loud(slotLine(secureRand, result, { user: me, amount: coins(amount), win: coins(win) }) + taxed(config, tax))
   }
 
@@ -210,7 +209,6 @@ export async function play(
     const win = amount * result.pays
     if (win > 0) ledger.move({ from: HOUSE, to: input.user, amount: win, kind: "payout", note: "roulette", actor: input.user })
     const tax = levy(ledger, { from: input.user, amount: win - amount, rate: config.taxes.winnings, note: "winnings tax" })
-    await schedule(ledger)
     return loud(rouletteLine(secureRand, result, { user: me, amount: coins(amount), win: coins(win), pocket: String(pocket) }) + taxed(config, tax))
   }
 
@@ -221,7 +219,6 @@ export async function play(
     const short = tooRich(BLACKJACK_TOP)
     if (short) return quiet(short)
     const dealt = deal(ledger, input.user, amount)
-    await schedule(ledger)
     return dealt
   }
 
@@ -265,7 +262,6 @@ export async function play(
   )
   // The draw is announced wherever the last ticket was bought.
   if (input.channel) ledger.setMeta("lottery_channel", input.channel)
-  await schedule(ledger)
   return loud(
     `${ticketLine(secureRand, {
       user: me,

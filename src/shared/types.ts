@@ -259,3 +259,13 @@ export function amountText(coins: number) {
 export function currency(config: Config, amount: number) {
   return `${amountText(amount)} ${Math.abs(amount) === 1 ? config.singular : config.plural}`
 }
+
+const HOUR = 60 * 60 * 1000
+const stockholmHour = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Stockholm", hour: "2-digit", hourCycle: "h23" })
+
+/** The lottery is drawn every day at 09:00 in Stockholm, summer and winter. This is the next one after `now`. */
+export function nextDraw(now: number) {
+  let at = (Math.floor(now / HOUR) + 1) * HOUR
+  while (Number(stockholmHour.format(at)) !== 9) at += HOUR
+  return at
+}
