@@ -24,13 +24,21 @@ const REFUSED: Record<string, string> = {
   canvas_disabled_user_team: "Canvases are switched off for this workspace.",
 }
 
-/** Slack text as canvas markdown: mentions in the canvas's own syntax, and nothing that breaks a table. */
-const cell = (text: string) => text.replace(/<@([UW][A-Z0-9]+)(?:\|[^>]*)?>/g, "![](@$1)").replace(/<#(C[A-Z0-9]+)(?:\|[^>]*)?>/g, "![](#$1)").replace(/\|/g, "\\|")
+/**
+ * Slack text as canvas markdown, with nothing that breaks a table. People are written as plain names, never as
+ * mentions: a mention in a canvas notifies them, and this page is rewritten many times a day.
+ */
+const cell = (ledger: Ledger, text: string) =>
+  text
+    .replace(/<@([UW][A-Z0-9]+)(?:\|[^>]*)?>/g, (_, id: string) => `@${ledger.row(id)?.name ?? "someone"}`)
+    .replace(/<#C[A-Z0-9]+\|([^>]*)>/g, "#$1")
+    .replace(/<#C[A-Z0-9]+>/g, "a channel")
+    .replace(/\|/g, "\\|")
 
 function page(ledger: Ledger) {
   const config = ledger.config()
   const coins = (cents: number) => money(config, cents)
-  const who = (id: string) => `![](@${id})`
+  const who = (id: string) => cell(ledger, ledger.row(id)?.name ?? "someone")
   const table = (head: string[], rows: string[][]) => [`| ${head.join(" | ")} |`, `|${head.map(() => "---").join("|")}|`, ...rows.map((row) => `| ${row.join(" | ")} |`)].join("\n")
   const out = [`*Where things stand, ${when.format(Date.now())}. The full picture is at ${ledger.env.PUBLIC_URL}*`]
 
@@ -44,7 +52,7 @@ function page(ledger: Ledger) {
   out.push("## :dart: Bounty board")
   out.push(
     board.length
-      ? `${table(["#", "Job", "Pays"], board.slice(0, 20).map((bounty) => [`#${bounty.id}`, cell(bounty.task), coins(bounty.pot)]))}\n\n\`/bank bounty ${board[0]!.id}\` shows that one, with a button to claim it.`
+      ? `${table(["#", "Job", "Pays"], board.slice(0, 20).map((bounty) => [`#${bounty.id}`, cell(ledger, bounty.task), coins(bounty.pot)]))}\n\n\`/bank bounty ${board[0]!.id}\` shows that one, with a button to claim it.`
       : "Nothing on the board. `/bank bounty 30 fix the flaky e2e test` puts something there.",
   )
 
@@ -59,7 +67,7 @@ function page(ledger: Ledger) {
     out.push("## :crystal_ball: Office bets")
     out.push(
       pools.length
-        ? table(["#", "Question", "Yes", "No"], pools.slice(0, 20).map((pool) => [`#${pool.id}`, cell(pool.question), coins(sides.get(pool.id)?.yes ?? 0), coins(sides.get(pool.id)?.no ?? 0)]))
+        ? table(["#", "Question", "Yes", "No"], pools.slice(0, 20).map((pool) => [`#${pool.id}`, cell(ledger, pool.question), coins(sides.get(pool.id)?.yes ?? 0), coins(sides.get(pool.id)?.no ?? 0)]))
         : "None open. `/bank pool will the demo work?` starts one.",
     )
     const sold = ledger.sql.exec<{ n: number | null }>("select sum(count) as n from tickets").one().n ?? 0
@@ -78,7 +86,7 @@ function page(ledger: Ledger) {
 
   if (config.shop.length) {
     out.push("## :shopping_bags: Shop")
-    out.push(table(["#", "What", "Price"], config.shop.map((item, index) => [String(index + 1), cell(item.name), coins(item.price)])))
+    out.push(table(["#", "What", "Price"], config.shop.map((item, index) => [String(index + 1), cell(ledger, item.name), coins(item.price)])))
   }
   return out.join("\n\n")
 }
