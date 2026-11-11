@@ -1,11 +1,37 @@
 // The casino's record, read straight off the ledger for the stats page. Nothing here is tracked separately: a stake
 // is a `bet` entry, a win is the `payout` entry written right after it, and a duel is one `duel` entry.
 
-import { CENTS, HOUSE, POT, type CasinoStats, type Gambler } from "../shared/types"
+import { CENTS, HOUSE, POT, type CasinoStats, type Gambler, type Sources } from "../shared/types"
 import type { Ledger } from "./casino"
 
 const HOUR = 60 * 60 * 1000
 const DAY = 24 * HOUR
+
+/** Where one person's coins came from, in cents. See `Sources`. */
+export function sources(ledger: Ledger, user: string): Sources {
+  const row = ledger.sql
+    .exec<Sources & { held: number }>(
+      `select
+        coalesce(sum(case
+          when kind in ('give', 'reaction') and to_id = ?1 then amount
+          when kind in ('give', 'reaction') and from_id = ?1 then -amount
+          when kind = 'refund' and to_id = ?1 then amount
+          when kind = 'refund' and from_id = ?1 then -amount else 0 end), 0) as colleagues,
+        coalesce(sum(case
+          when kind in ('payout', 'duel') and to_id = ?1 then amount
+          when kind in ('bet', 'duel') and from_id = ?1 then -amount else 0 end), 0) as casino,
+        coalesce(sum(case
+          when kind = 'sell' and to_id = ?1 then amount
+          when kind = 'buy' and from_id = ?1 then -amount else 0 end), 0) as market,
+        coalesce(sum(case when kind = 'tax' and from_id = ?1 then amount else 0 end), 0) as taxes,
+        (select coalesce(sum(cost), 0) from positions where user_id = ?1) as held
+      from entries where from_id = ?1 or to_id = ?1`,
+      user,
+    )
+    .one()
+  // Coins still sitting in a position are neither made nor lost yet, so they don't count against the market.
+  return { colleagues: row.colleagues, casino: row.casino, market: row.market + row.held, taxes: row.taxes }
+}
 
 export function casinoStats(ledger: Ledger): CasinoStats {
   const coins = (cents: number) => cents / CENTS

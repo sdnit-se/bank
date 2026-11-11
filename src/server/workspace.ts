@@ -22,7 +22,7 @@ import { market, marketHelp, portfolio, setupMarket, tradeLine } from "./market"
 import { importHistory } from "./migrate"
 import { convertToCents, inCents, money as currency } from "./money"
 import { slack, SlackError } from "./slack"
-import { casinoStats } from "./stats"
+import { casinoStats, sources } from "./stats"
 
 export type Install = {
   token: string
@@ -215,6 +215,12 @@ export class Workspace extends DurableObject<Env> {
 
   async economy(): Promise<Economy> {
     return economy(this.ledger())
+  }
+
+  /** Where someone's coins came from, in coins. */
+  private sourcesOf(id: string) {
+    const found = sources(this.ledger(), id)
+    return { colleagues: found.colleagues / CENTS, casino: found.casino / CENTS, market: found.market / CENTS, taxes: found.taxes / CENTS }
   }
 
   async casino(): Promise<CasinoStats> {
@@ -687,6 +693,7 @@ export class Workspace extends DurableObject<Env> {
       installed: Boolean(install?.token),
       admin: this.isAdmin(viewer.id),
       account: row ? this.account(row) : null,
+      sources: this.sourcesOf(viewer.id),
       config,
     }
   }
@@ -970,17 +977,36 @@ export class Workspace extends DurableObject<Env> {
 
     if (sub === "balance" || sub === "bal") {
       const row = (await this.ensure([params.user_id])).get(params.user_id)
-      return reply(`you have *${currency(config, row?.balance ?? 0)}* :${config.symbol}:`.trim())
+      const from = sources(this.ledger(), params.user_id)
+      const signed = (cents: number) => `${cents < 0 ? "−" : "+"}${currency(config, Math.abs(cents)).split(" ")[0]}`
+      // What colleagues gave is the point of the bank, so it is spelled out apart from winnings and losses.
+      const parts = [
+        `${currency(config, row?.received ?? 0)} given to you by people`,
+        from.casino ? `casino ${signed(from.casino)}` : "",
+        from.market ? `market ${signed(from.market)}` : "",
+      ].filter(Boolean)
+      return reply(`you have *${currency(config, row?.balance ?? 0)}* :${config.symbol}:\n${parts.join(" · ")}`.trim())
     }
 
     if (sub === "top" || sub === "leaderboard") {
       await this.freshen()
-      const rows = this.sql
-        .exec<AccountRow>("select * from accounts where bot = 0 and gone = 0 order by balance desc, received desc limit 10")
-        .toArray()
-      if (!rows.length) return reply("nobody has any yet")
-      const lines = rows.map((row, i) => `${i + 1}. <@${row.id}> · ${currency(config, row.balance)}`)
-      return reply(`*leaderboard*\n${lines.join("\n")}\n\n<${this.env.PUBLIC_URL}|see everything>`)
+      // Two lists: who people have thanked the most, which is what the bank is for, and who simply has the most.
+      const top = (order: string) =>
+        this.sql.exec<AccountRow>(`select * from accounts where bot = 0 and gone = 0 order by ${order} limit 5`).toArray()
+      const thanked = top("received desc, balance desc, name asc").filter((row) => row.received > 0)
+      const rich = top("balance desc, received desc, name asc")
+      if (!rich.length) return reply("nobody has any yet")
+      const list = (rows: AccountRow[], amount: (row: AccountRow) => number) =>
+        rows.map((row, i) => `${i + 1}. <@${row.id}> · ${currency(config, amount(row))}`).join("\n")
+      return reply(
+        [
+          thanked.length ? `*most appreciated* · given to them by people\n${list(thanked, (row) => row.received)}` : "",
+          `*richest* · however they got it\n${list(rich, (row) => row.balance)}`,
+          `<${this.env.PUBLIC_URL}|see everything>`,
+        ]
+          .filter(Boolean)
+          .join("\n\n"),
+      )
     }
 
     if (sub === "history") {

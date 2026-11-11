@@ -256,9 +256,15 @@ function Dashboard(props: { me: Me; refresh: () => void }) {
             <span class="muted text-[15px] self-end pb-1.5">{balance() === 1 ? config().singular : config().plural}</span>
           </div>
         </div>
-        <div class="flex gap-8">
+        <div class="flex flex-wrap gap-x-8 gap-y-3">
           <Stat label="Received" value={props.me.account?.received ?? 0} />
           <Stat label="Given" value={props.me.account?.given ?? 0} />
+          <Show when={config().games.enabled || props.me.sources.casino !== 0}>
+            <Stat label="Casino" value={props.me.sources.casino} signed />
+          </Show>
+          <Show when={config().market.enabled || props.me.sources.market !== 0}>
+            <Stat label="Market" value={props.me.sources.market} signed />
+          </Show>
         </div>
       </section>
 
@@ -309,11 +315,14 @@ function Dashboard(props: { me: Me; refresh: () => void }) {
   )
 }
 
-function Stat(props: { label: string; value: number }) {
+function Stat(props: { label: string; value: number; signed?: boolean }) {
   return (
     <div class="flex flex-col sm:items-end">
       <span class="faint">{props.label}</span>
-      <span class="num strong text-[15px]">{amountText(props.value)}</span>
+      <span class="num strong text-[15px]" classList={{ positive: props.signed && props.value > 0, danger: props.signed && props.value < 0 }}>
+        {props.signed && props.value !== 0 ? (props.value > 0 ? "+" : "−") : ""}
+        {amountText(Math.abs(props.value))}
+      </span>
     </div>
   )
 }
@@ -350,13 +359,34 @@ function Empty(props: { children: JSX.Element }) {
   return <div class="px-4 py-8 text-center faint">{props.children}</div>
 }
 
+/** The same people three ways. Who colleagues have thanked comes first: it is what the bank is for. */
+const RANKINGS = [
+  { key: "received", label: "Most appreciated", note: "given by people" },
+  { key: "given", label: "Most generous", note: "given away" },
+  { key: "balance", label: "Richest", note: "however they got it" },
+] as const
+
 function LeaderboardView(props: { me: Me; accounts: Me["account"][] | undefined }) {
+  const [ranking, setRanking] = createSignal<(typeof RANKINGS)[number]>(RANKINGS[0])
+  const ranked = createMemo(() =>
+    [...(props.accounts ?? [])].sort((a, b) => b![ranking().key] - a![ranking().key] || b!.balance - a!.balance || a!.name.localeCompare(b!.name)),
+  )
   return (
     <Panel>
       <Show when={props.accounts} fallback={<Empty>Loading…</Empty>}>
         <Show when={props.accounts!.length} fallback={<Empty>Nobody has any yet.</Empty>}>
+          <div class="px-3 pt-3 pb-2 flex flex-wrap items-center gap-1.5">
+            <For each={RANKINGS}>
+              {(option) => (
+                <Button variant={ranking().key === option.key ? "neutral" : "ghost-muted"} size="small" onClick={() => setRanking(option)}>
+                  {option.label}
+                </Button>
+              )}
+            </For>
+            <span class="faint ml-auto pr-1 hidden sm:inline">{ranking().note}</span>
+          </div>
           <div>
-            <For each={props.accounts}>
+            <For each={ranked()}>
               {(account, index) => (
                 <div class="row flex items-center gap-3 px-4 py-2.5" classList={{ self: account!.id === props.me.user.id }}>
                   <span class="num faint w-6 text-right shrink-0">{index() + 1}</span>
@@ -367,9 +397,11 @@ function LeaderboardView(props: { me: Me; accounts: Me["account"][] | undefined 
                       <Badge variant="subtle">You</Badge>
                     </Show>
                   </span>
-                  <span class="faint num hidden sm:inline">{amountText(account!.received)} received</span>
+                  <span class="faint num hidden sm:inline">
+                    {ranking().key === "balance" ? `${amountText(account!.received)} received` : `holds ${amountText(account!.balance)}`}
+                  </span>
                   <span class="strong min-w-16 flex justify-end">
-                    <Amount me={props.me} value={account!.balance} />
+                    <Amount me={props.me} value={account![ranking().key]} />
                   </span>
                 </div>
               )}

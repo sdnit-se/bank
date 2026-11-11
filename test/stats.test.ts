@@ -1,6 +1,6 @@
 // The casino's record, worked out from a small history written by hand so every figure can be checked.
 import { expect, test } from "bun:test"
-import { casinoStats } from "../src/server/stats"
+import { casinoStats, sources } from "../src/server/stats"
 import { CENTS, HOUSE, POT } from "../src/shared/types"
 import { A, B, clock, frozen, world } from "./world"
 
@@ -78,4 +78,31 @@ test("the pot is tracked hour by hour, climbing with tickets and emptying at the
   expect(potHours[167]!.at).toBe(clock.now)
   expect(potHours[166]!.at).toBe(start + 6 * hour)
   expect(potHours[167]!.pot).toBe(w.balance(POT))
+})
+
+test("what colleagues gave is counted apart from winnings, trades and taxes", () => {
+  const w = world()
+  w.print(HOUSE, 500)
+  const move = (from: string | null, to: string | null, coins: number, kind: Parameters<typeof w.ledger.move>[0]["kind"]) =>
+    w.ledger.move({ from, to, amount: coins * CENTS, kind, actor: from })
+  w.give(B, A, 12)
+  w.give(A, B, 2)
+  move(A, HOUSE, 10, "bet")
+  move(HOUSE, A, 25, "payout")
+  move(B, A, 5, "duel")
+  move(A, "MARKET", 30, "buy")
+  move(A, "CENTRAL", 0.5, "tax")
+  move("MARKET", A, 22, "sell")
+  w.db.query("insert into positions (user_id, symbol, units, cost) values (?, 'ERIC-B.ST', 1, ?)").run(A, 10 * CENTS)
+
+  const cents = sources(w.ledger, A)
+  // In the market: 30 in, 22 out, 10 still held at cost, so 2 made on what was closed.
+  expect({ colleagues: cents.colleagues / CENTS, casino: cents.casino / CENTS, market: cents.market / CENTS, taxes: cents.taxes / CENTS }).toEqual({
+    colleagues: 10,
+    casino: 20,
+    market: 2,
+    taxes: 0.5,
+  })
+  expect(sources(w.ledger, B)).toEqual({ colleagues: -10 * CENTS, casino: -5 * CENTS, market: 0, taxes: 0 })
+  expect(sources(w.ledger, "UNOBODY")).toEqual({ colleagues: 0, casino: 0, market: 0, taxes: 0 })
 })

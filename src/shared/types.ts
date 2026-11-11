@@ -103,12 +103,28 @@ export type Account = {
   given: number
 }
 
+/**
+ * Where someone's coins came from and went, beyond their starting balance. What colleagues gave them is kept apart
+ * from the rest on purpose: that is what the bank is for, and a lucky night at the slots shouldn't look like it.
+ */
+export type Sources = {
+  /** Given to them by people, less what they gave. */
+  colleagues: number
+  /** Won at the casino, less what they staked there. */
+  casino: number
+  /** Made or lost on positions they have closed. */
+  market: number
+  /** Paid in taxes and fees. */
+  taxes: number
+}
+
 export type Me = {
   user: { id: string; name: string; image: string | null }
   team: { id: string; name: string; domain: string | null; icon: string | null }
   admin: boolean
   installed: boolean
   account: Account | null
+  sources: Sources
   config: Config
   /** Image URLs for the workspace's custom emoji used by the config (the symbol and the reactions). */
   emoji: Record<string, string>
