@@ -3,7 +3,7 @@
     "name": "Bank",
     "description": "A tiny currency for your Slack. Give coins with a reaction or /bank give.",
     "background_color": "#1a1a1a",
-    "long_description": "Everyone in your workspace starts with 100 coins. Give them away when someone helps you out: react to their message with a coin emoji, or run /bank give @someone 10. Check your balance with /bank balance and see the leaderboard with /bank top. Admins can rename the currency, change the starting balance, choose which emoji are worth what, and adjust balances at https://anoma.ly/labs/bank."
+    "long_description": "Everyone in your workspace starts with 100 coins. Give them away when someone helps you out: react to their message with a coin emoji, or run /bank give @someone 10. Check your balance with /bank balance and see the leaderboard with /bank top. Admins can rename the currency, change the starting balance, choose which emoji are worth what, and adjust balances at https://labs.shebang.se/bank."
   },
   "features": {
     "app_home": {
@@ -18,7 +18,7 @@
     "slash_commands": [
       {
         "command": "/bank",
-        "url": "https://anoma.ly/labs/bank/slack/commands",
+        "url": "https://labs.shebang.se/bank/slack/commands",
         "description": "Give coins, check your balance, see the leaderboard",
         "usage_hint": "give @someone 10 for the fix \u00b7 balance \u00b7 top \u00b7 history",
         "should_escape": true
@@ -27,8 +27,8 @@
   },
   "oauth_config": {
     "redirect_urls": [
-      "https://anoma.ly/labs/bank/auth/install",
-      "https://anoma.ly/labs/bank/auth/login"
+      "https://labs.shebang.se/bank/auth/install",
+      "https://labs.shebang.se/bank/auth/login"
     ],
     "scopes": {
       "user": [
@@ -50,7 +50,7 @@
   },
   "settings": {
     "event_subscriptions": {
-      "request_url": "https://anoma.ly/labs/bank/slack/events",
+      "request_url": "https://labs.shebang.se/bank/slack/events",
       "bot_events": [
         "reaction_added",
         "app_uninstalled",

@@ -5,7 +5,7 @@ import type { EventEnvelope, Viewer } from "./workspace"
 
 export { Workspace } from "./workspace"
 
-const BASE = "/labs/bank"
+const BASE = "/bank"
 const SESSION = "bank_session"
 const STATE = "bank_state"
 

@@ -1,6 +1,6 @@
 import type { Admin, Config, CustomEmoji, History, Leaderboard, Me } from "../shared/types"
 
-export const BASE = "/labs/bank"
+export const BASE = "/bank"
 
 export class ApiError extends Error {
   constructor(

@@ -2,7 +2,7 @@
 
 A tiny currency for your Slack. Everyone starts with 100 coins and gives them away with a reaction or `/bank give`.
 
-Live at https://anoma.ly/labs/bank.
+Live at https://labs.shebang.se/bank. Forked from https://github.com/anomalyco/bank.
 
 ## How it works
 
