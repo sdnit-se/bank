@@ -16,6 +16,7 @@ import {
 } from "../shared/types"
 import { economy, historyLine, play, settle, setup, type Ledger } from "./casino"
 import type { Env } from "./env"
+import { market } from "./market"
 import { importHistory } from "./migrate"
 import { convertToCents, inCents, money as currency } from "./money"
 import { slack, SlackError } from "./slack"
@@ -990,6 +991,8 @@ export class Workspace extends DurableObject<Env> {
     // The games claim their own words before anything with a mention and a number is taken for a gift.
     const played = await play(this.ledger(), { sub, words: words.slice(1), user: params.user_id, channel: params.channel ?? null })
     if (played) return played
+    const quoted = await market(this.ledger(), { sub, words: words.slice(1) })
+    if (quoted) return quoted
 
     // give / send / pay, or just "/bank @someone 10"
     const rest = ["give", "send", "pay", "tip"].includes(sub) ? words.slice(1) : words
