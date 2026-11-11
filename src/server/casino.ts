@@ -325,7 +325,7 @@ export async function settle(ledger: Ledger) {
 
   const tickets = ledger.sql.exec<{ user: string; count: number }>("select id as user, count from tickets order by id").toArray()
   const winner = draw(secureRand, tickets)
-  let lottery: { winner: string; pot: number; share: string; tax: number } | null = null
+  let lottery: { winner: string; pot: number; mine: number; sold: number; tax: number } | null = null
   if (winner) {
     const extra = Math.floor((held(ledger, CENTRAL) * LOTTERY_SHARE) / 100)
     if (extra > 0) ledger.move({ from: CENTRAL, to: POT, amount: extra, kind: "stimulus", note: "lottery" })
@@ -335,13 +335,13 @@ export async function settle(ledger: Ledger) {
     const mine = tickets.find((ticket) => ticket.user === winner)!.count
     // What they paid for their own tickets isn't winnings.
     const tax = levy(ledger, { from: winner, amount: pot - mine * CENTS, rate: config.taxes.winnings, note: "winnings tax", actor: null })
-    lottery = { winner, pot, share: `${mine} of ${tickets.reduce((sum, ticket) => sum + ticket.count, 0)}`, tax }
+    lottery = { winner, pot, mine, sold: tickets.reduce((sum, ticket) => sum + ticket.count, 0), tax }
   }
 
   const posted = await publish(ledger, { wealth, matured, expired, lottery, honours: award(ledger) })
   // Bank can't post where it isn't a member, so a winner the paper didn't reach is told directly.
   if (lottery && !posted) {
-    const text = drawLine(secureRand, { winner: `<@${lottery.winner}>`, pot: currency(config, lottery.pot), share: lottery.share }) + taxed(config, lottery.tax)
+    const text = drawLine(secureRand, { winner: `<@${lottery.winner}>`, pot: currency(config, lottery.pot), share: `${lottery.mine} of ${lottery.sold}` }) + taxed(config, lottery.tax)
     await ledger.call("chat.postMessage", { channel: lottery.winner, text, unfurl_links: false }).catch((error: unknown) => console.error("announcement failed", error))
   }
 
