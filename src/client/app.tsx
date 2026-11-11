@@ -10,7 +10,7 @@ import { Tabs } from "@opencode/ui/tabs"
 import { TextInput } from "@opencode/ui/text-input"
 import { createMemo, createResource, createRoot, createSignal, For, type JSX, Match, Show, Switch } from "solid-js"
 import { createStore, reconcile, unwrap } from "solid-js/store"
-import { amountText, BONDS, CENTRAL, currency, HOUSE, INSTITUTIONS, type Config, type CustomEmoji, type Entry, type History, type Me } from "../shared/types"
+import { amountText, BONDS, BOUNTIES, CENTRAL, currency, HOUSE, INSTITUTIONS, type Config, type CustomEmoji, type Entry, type History, type Me } from "../shared/types"
 import { api, ApiError, BASE, type Person } from "./api"
 import { CasinoView } from "./casino"
 import { EconomyView } from "./economy"
@@ -469,16 +469,19 @@ function describe(entry: Entry, history: History, viewer: string | null) {
       return entry.to === BONDS ? `${name(entry.from)} bought a bond at ${entry.note}` : `${possessive(entry.to)} bond matured`
     case "shop":
       return `${name(entry.from)} bought ${entry.note} in the shop`
+    case "bounty":
+      return entry.from === BOUNTIES ? `${name(entry.to)} got a bounty stake back` : `${name(entry.from)} put coins on a bounty`
     case "print":
       return `the market printed ${viewer === entry.actor ? "your" : `${name(entry.actor)}'s`} gain on ${entry.note ?? "a sale"}`
     default:
+      if (entry.from === BOUNTIES) return `${name(entry.to)} collected a bounty from ${name(entry.actor)}`
       return `${name(entry.from)} gave ${name(entry.to)}${via}`
   }
 }
 
 /** Entries whose note is written by Bank and already part of the description. */
 function fixedNote(entry: Entry) {
-  return ["grant", "bet", "payout", "duel", "sweep", "stimulus", "buy", "sell", "tax", "print", "bond", "shop"].includes(entry.kind)
+  return ["grant", "bet", "payout", "duel", "sweep", "stimulus", "buy", "sell", "tax", "print", "bond", "shop", "bounty"].includes(entry.kind)
 }
 
 const page = 30

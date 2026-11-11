@@ -7,8 +7,9 @@
 // Like the rest of the ledger this counts in cents, and the settings it is handed are in cents too. The economy
 // figures are the one thing that leaves here for the web app, so they go out in coins.
 
-import { BONDS, CENTRAL, CENTS, HOUSE, INSTITUTIONS, MARKET, nextDraw, POOLS, POT, toCents, type Config, type Economy } from "../shared/types"
+import { BONDS, BOUNTIES, CENTRAL, CENTS, HOUSE, INSTITUTIONS, MARKET, nextDraw, POOLS, POT, toCents, type Config, type Economy } from "../shared/types"
 import { matureBonds } from "./bonds"
+import { expireBounties } from "./bounties"
 import {
   BLACKJACK_TOP,
   brokeLine,
@@ -59,6 +60,8 @@ export function setup(sql: SqlStorage) {
     create table if not exists heists (id integer primary key autoincrement, by_id text not null, stake integer not null, crew text not null, at integer not null);
     create table if not exists pools (id integer primary key autoincrement, by_id text not null, question text not null, stake integer not null, closed integer not null default 0, channel text, at integer not null);
     create table if not exists pool_bets (pool integer not null, user_id text not null, side text not null, amount integer not null, primary key (pool, user_id));
+    create table if not exists bounties (id integer primary key autoincrement, by_id text not null, task text not null, claims text not null, channel text, at integer not null);
+    create table if not exists bounty_funds (bounty integer not null, user_id text not null, amount integer not null, primary key (bounty, user_id));
     create table if not exists titles (user_id text not null, title text not null, at integer not null, primary key (user_id, title));
   `)
   // Marked as bots, which keeps them off the leaderboard and stops anyone giving them coins by hand.
@@ -68,7 +71,7 @@ export function setup(sql: SqlStorage) {
 }
 
 /** The next draw as Slack shows a time: in each reader's own time zone, with UTC for anything that can't. */
-function drawTime(now = Date.now()) {
+export function drawTime(now = Date.now()) {
   const at = nextDraw(now)
   return `<!date^${Math.floor(at / 1000)}^{date_short_pretty} at {time}|${new Date(at).toISOString().slice(11, 16)} UTC>`
 }
@@ -324,6 +327,7 @@ export async function settle(ledger: Ledger) {
 
   const matured = matureBonds(ledger)
   const expired = expirePools(ledger)
+  const abandoned = expireBounties(ledger)
 
   const tickets = ledger.sql.exec<{ user: string; count: number }>("select id as user, count from tickets order by id").toArray()
   const winner = draw(secureRand, tickets)
@@ -340,7 +344,7 @@ export async function settle(ledger: Ledger) {
     lottery = { winner, pot, mine, sold: tickets.reduce((sum, ticket) => sum + ticket.count, 0), tax }
   }
 
-  const posted = await publish(ledger, { wealth, matured, expired, lottery, honours: award(ledger) })
+  const posted = await publish(ledger, { wealth, matured, expired, abandoned, lottery, honours: award(ledger) })
   // Bank can't post where it isn't a member, so a winner the paper didn't reach is told directly.
   if (lottery && !posted) {
     const text = drawLine(secureRand, { winner: `<@${lottery.winner}>`, pot: currency(config, lottery.pot), share: `${lottery.mine} of ${lottery.sold}` }) + taxed(config, lottery.tax)
@@ -364,6 +368,7 @@ export function economy(ledger: Ledger): Economy {
     market: held(ledger, MARKET),
     bonds: held(ledger, BONDS),
     pools: held(ledger, POOLS),
+    bounties: held(ledger, BOUNTIES),
   }
 
   // An entry with no sender created coins and one with no recipient destroyed them. Everything else only moved them.
@@ -404,7 +409,8 @@ export function economy(ledger: Ledger): Economy {
       market: coins(supply.market),
       bonds: coins(supply.bonds),
       pools: coins(supply.pools),
-      total: coins(supply.people + supply.house + supply.pot + supply.central + supply.market + supply.bonds + supply.pools),
+      bounties: coins(supply.bounties),
+      total: coins(supply.people + supply.house + supply.pot + supply.central + supply.market + supply.bonds + supply.pools + supply.bounties),
     },
     members: active.length,
     growth: { week: coins(days[29]!.supply - days[22]!.supply), month: coins(days[29]!.supply - before) },

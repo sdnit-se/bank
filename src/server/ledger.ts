@@ -3,11 +3,11 @@
 //
 // Amounts are in cents, like the rest of the ledger.
 
-import { BONDS, nextDraw, type Config, type EntryKind } from "../shared/types"
+import { BONDS, BOUNTIES, nextDraw, type Config, type EntryKind } from "../shared/types"
 import type { Env } from "./env"
 import type { Rand } from "./games"
 
-type Row = { id: string; name: string; balance: number; bot: number; gone: number }
+type Row = { id: string; name: string; balance: number; received: number; bot: number; gone: number }
 
 type Moved =
   | { ok: true; id: number; from: number | null; to: number | null }
@@ -71,6 +71,10 @@ export function historyLine(row: { kind: string; from_id: string | null; to_id: 
       return row.to_id === BONDS ? `-${amount} into a bond at ${row.note}` : `+${amount} back from a bond`
     case "shop":
       return `-${amount} at the shop for ${row.note}`
+    case "bounty":
+      return row.to_id === user ? `+${amount} back from a bounty that was called off` : `-${amount} on a bounty: ${row.note}`
+    case "give":
+      return row.from_id === BOUNTIES ? `+${amount} bounty for ${row.note}` : null
     default:
       return null
   }
@@ -79,7 +83,7 @@ export function historyLine(row: { kind: string; from_id: string | null; to_id: 
 // ---------- what a command answers with
 
 type Text = { type: string; text: string }
-export type Button = { type: "button"; text: Text; action_id: string; value: string; style?: "primary" | "danger" }
+export type Button = { type: "button"; text: Text; action_id: string; value: string; style?: "primary" | "danger"; url?: string }
 /** A "more" menu. What was picked arrives the way a button's value does. */
 export type Menu = { type: "overflow"; action_id: string; options: { text: Text; value: string }[] }
 export type Block =
@@ -115,6 +119,25 @@ export const button = (text: string, action: string, value: string, style?: Butt
 /** The same message with buttons under it. The text stays as it is for anything that can't show them. */
 export function withButtons(message: Message, buttons: (Button | Menu)[]): Message {
   return { ...message, blocks: [section(message.text), { type: "actions", elements: buttons }] }
+}
+
+/** Someone's own words in a public message, with @channel, @here and group mentions made harmless. */
+export const defused = (text: string) =>
+  text.replace(/<!(channel|here|everyone)[^>]*>/g, "@$1").replace(/<!subteam\^[A-Z0-9]+(?:\|@?([^>]*))?>/g, (_, name?: string) => `@${name ?? "group"}`)
+
+/**
+ * The answer to a click that settles a card, which may be days up the channel: the result is posted afresh where
+ * people will see it, and the card is struck out where it was.
+ */
+export async function settledCard(ledger: Ledger, channel: string | null, answer: Message, title: string): Promise<Message> {
+  if (answer.response_type === "ephemeral") return answer
+  const posted = channel
+    ? await ledger.call("chat.postMessage", { channel, text: answer.text, unfurl_links: false }).then(
+        () => true,
+        () => false,
+      )
+    : false
+  return inPlace(posted ? loud(`${title} · settled`) : answer)
 }
 
 /** Puts a message where the one with the buttons was. It carries its own block so the buttons are sure to go. */

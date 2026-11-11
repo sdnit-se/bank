@@ -4,13 +4,13 @@
 // whoever newly answers to it is named in the morning paper. On the first round of a month, three more go to whoever
 // was thanked most, won most and lost most in the month before. A title is kept for good once it is earned.
 
-import { BONDS, CENTS, HOUSE, POOLS, POT } from "../shared/types"
+import { BONDS, BOUNTIES, CENTS, HOUSE, POOLS, POT } from "../shared/types"
 import { quiet, type Ledger, type Message } from "./ledger"
 
 const coins = (amount: number) => amount * CENTS
 
 /** `who` selects the ids of everyone who has earned it. */
-const TITLES: { name: string; how: string; who: string }[] = [
+export const TITLES: { name: string; how: string; who: string }[] = [
   { name: "Pillar of the community", how: "be thanked with 250 by colleagues", who: `select id from accounts where received >= ${coins(250)}` },
   { name: "High roller", how: "stake 1,000 in all", who: `select from_id as id from entries where kind = 'bet' group by from_id having sum(amount) >= ${coins(1000)}` },
   { name: "Regular", how: "place 100 bets", who: "select from_id as id from entries where kind = 'bet' group by from_id having count(*) >= 100" },
@@ -24,6 +24,7 @@ const TITLES: { name: string; how: string; who: string }[] = [
   { name: "Bond villain", how: "lend the central bank 500 in all", who: `select from_id as id from entries where kind = 'bond' and to_id = '${BONDS}' group by from_id having sum(amount) >= ${coins(500)}` },
   { name: "Day trader", how: "make 25 trades", who: "select actor as id from entries where kind in ('buy', 'sell') group by actor having count(*) >= 25" },
   { name: "Model taxpayer", how: "pay 100 in tax", who: `select from_id as id from entries where kind = 'tax' group by from_id having sum(amount) >= ${coins(100)}` },
+  { name: "Bounty hunter", how: "collect 3 bounties", who: `select to_id as id from entries where kind = 'give' and from_id = '${BOUNTIES}' group by to_id having count(*) >= 3` },
   { name: "Big spender", how: "spend 200 in the shop", who: `select from_id as id from entries where kind = 'shop' group by from_id having sum(amount) >= ${coins(200)}` },
 ]
 

@@ -23,6 +23,10 @@ Slack doesn't let apps upload custom emoji, so workspaces add the coin images th
   it splits the pot (`/bank pool will the demo work?`, `src/server/pools.ts`).
 - **A morning paper.** One post after the 09:00 round reports the last day off the ledger, in place of an
   announcement for every little thing (`src/server/paper.ts`).
+- **Bounties**: `/bank bounty 30 fix the flaky e2e test` holds the coins until the poster pays whoever did it, and
+  anyone can chip in. A paid bounty counts as a thank-you (`src/server/bounties.ts`).
+- **A Home tab** in Slack with your balance, titles, the bounty board, open bets, bonds and the shop
+  (`src/server/home.ts`).
 - **Titles**, each one question asked of the ledger once a day (`/bank titles`, `src/server/titles.ts`), and **a
   shop** where coins buy what an admin has put a price on (`/bank shop`, `src/server/shop.ts`).
 - **An Economy tab**: money supply, GDP (coins given between people), inflation, and who holds what.

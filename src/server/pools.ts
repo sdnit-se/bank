@@ -8,7 +8,7 @@
 
 import { POOLS, toCents } from "../shared/types"
 import { brokeLine, say, secureRand, type Line } from "./games"
-import { button, held, inPlace, loud, quiet, tooFast, withButtons, type Ledger, type Menu, type Message } from "./ledger"
+import { button, defused, held, inPlace, loud, quiet, settledCard, tooFast, withButtons, type Ledger, type Menu, type Message } from "./ledger"
 import { money } from "./money"
 import { levy, taxed } from "./taxes"
 
@@ -145,6 +145,9 @@ function rule(ledger: Ledger, user: string, id: number, ruling: Ruling): Message
   return loud(`${title} · it's a *${ruling}*.\n${line}${taxed(config, tax)}`)
 }
 
+/** Every office bet still open, oldest first. */
+export const openPools = (ledger: Ledger) => ledger.sql.exec<Pool>("select * from pools order by id").toArray()
+
 /** Calls off every pool that has been open too long. Returns their questions, for the morning paper. */
 export function expirePools(ledger: Ledger, now = Date.now()) {
   const old = ledger.sql.exec<Pool>("select * from pools where at < ?", now - OPEN_FOR).toArray()
@@ -157,7 +160,7 @@ export async function pool(ledger: Ledger, input: { user: string; words: string[
   const coins = (cents: number) => money(ledger.config(), cents)
   const [first, second, third] = input.words.map((word) => word.toLowerCase())
   if (first === undefined) {
-    const all = ledger.sql.exec<Pool>("select * from pools order by id").toArray()
+    const all = openPools(ledger)
     const lines = all.map((pool) => `#${pool.id} · ${pool.question} · \`/bank pool ${pool.id}\``)
     return quiet([`*office bets* · ${coins(held(ledger, POOLS))} riding on ${all.length === 1 ? "one question" : `${all.length} questions`}`, ...lines, USAGE].join("\n"))
   }
@@ -166,7 +169,7 @@ export async function pool(ledger: Ledger, input: { user: string; words: string[
   if (known && (second === "close" || second === "off")) return rule(ledger, input.user, known.id, second)
   if (known && (second === "yes" || second === "no")) return third === "won" ? rule(ledger, input.user, known.id, second) : back(ledger, input.user, known.id, second)
   const stake = toCents(first)
-  const question = input.words.slice(stake === null ? 0 : 1).join(" ").slice(0, 200)
+  const question = defused(input.words.slice(stake === null ? 0 : 1).join(" ")).slice(0, 200)
   return open(ledger, { user: input.user, channel: input.channel, stake: stake ?? Math.min(USUAL, ledger.config().games.maxBet), question })
 }
 
@@ -179,10 +182,6 @@ export async function poolClick(ledger: Ledger, input: { user: string; action: s
   const [id, ruling] = input.value.split(":") as [string, Ruling]
   const before = find(ledger, Number(id))
   const answer = rule(ledger, input.user, Number(id), ruling)
-  if (answer.response_type === "ephemeral" || ruling === "close" || !before?.channel) return answer.response_type === "ephemeral" ? answer : inPlace(answer)
-  const posted = await ledger.call("chat.postMessage", { channel: before.channel, text: answer.text, unfurl_links: false }).then(
-    () => true,
-    () => false,
-  )
-  return inPlace(posted ? loud(`:crystal_ball: ~${before.question}~ · settled`) : answer)
+  if (answer.response_type === "ephemeral" || ruling === "close") return answer.response_type === "ephemeral" ? answer : inPlace(answer)
+  return settledCard(ledger, before?.channel ?? null, answer, `:crystal_ball: ~${before?.question ?? "office bet"}~`)
 }

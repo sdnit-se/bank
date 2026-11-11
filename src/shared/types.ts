@@ -75,7 +75,8 @@ export const defaultConfig: Config = {
  * along with a grant or an adjustment, the only kind that adds to how many coins exist.
  *
  * `bond` is coins going into a bond and coming back out, and `shop` is someone paying the central bank for something
- * an admin put a price on.
+ * an admin put a price on. `bounty` is coins put up for a job, or handed back when it is called off; paying one out is
+ * a `give` from the bounty board, since that is what it is.
  */
 export type EntryKind =
   | "grant"
@@ -94,6 +95,7 @@ export type EntryKind =
   | "print"
   | "bond"
   | "shop"
+  | "bounty"
 
 /**
  * The accounts that aren't people. They hold coins like anyone else, so games move coins around without creating or
@@ -106,6 +108,8 @@ export const MARKET = "MARKET"
 export const BONDS = "BONDS"
 /** Holds what is staked on office bets until someone says how they went. */
 export const POOLS = "POOLS"
+/** Holds what is put up for bounties until it is paid to whoever did the job. */
+export const BOUNTIES = "BOUNTIES"
 export const INSTITUTIONS: Record<string, string> = {
   [HOUSE]: "the house",
   [POT]: "the lottery pot",
@@ -113,6 +117,7 @@ export const INSTITUTIONS: Record<string, string> = {
   [MARKET]: "the market",
   [BONDS]: "the bond desk",
   [POOLS]: "the bookmaker",
+  [BOUNTIES]: "the bounty board",
 }
 
 export type Entry = {
@@ -184,7 +189,7 @@ export type EconomyDay = {
 }
 
 export type Economy = {
-  supply: { people: number; house: number; pot: number; central: number; market: number; bonds: number; pools: number; total: number }
+  supply: { people: number; house: number; pot: number; central: number; market: number; bonds: number; pools: number; bounties: number; total: number }
   /** Taxes and fees paid to the central bank over the last 7 and 30 days. */
   taxes: { week: number; month: number }
   members: number

@@ -4,9 +4,11 @@ import { expect, test } from "bun:test"
 import { play, settle } from "../src/server/casino"
 import type { Rand } from "../src/server/games"
 import type { Message } from "../src/server/ledger"
+import { bounties, bountyClick } from "../src/server/bounties"
 import { shop, shopClick } from "../src/server/shop"
+import { sources } from "../src/server/stats"
 import { interact } from "../src/server/tables"
-import { CENTRAL, CENTS, HOUSE, nextDraw, POOLS, POT } from "../src/shared/types"
+import { BOUNTIES, CENTRAL, CENTS, HOUSE, nextDraw, POOLS, POT } from "../src/shared/types"
 import { A, B, clock, frozen, world as bare } from "./world"
 
 const C = "UCCC"
@@ -296,4 +298,33 @@ test("the shop takes the price for the central bank, and only from someone who h
   expect((await shopClick(w.ledger, { user: B, action: "shop_buy", value: "A pony" }))!.text).toContain("doesn't sell that")
   expect([w.balance(B), w.balance(CENTRAL)]).toEqual([40, 120])
   expect(w.total()).toBe(200)
+})
+
+test("a bounty holds everyone's coins until the poster pays them, as a thank-you, to someone else", async () => {
+  const w = world()
+  w.join(C)
+  const say = (user: string, text: string) => bounties(w.ledger, { sub: "bounty", words: text.split(" "), user, channel: "C1" })
+  const click = (user: string, action: string, value: string) => bountyClick(w.ledger, { user, action, value })
+  const id = button(await say(A, "30 fix the flaky test"))
+  await click(B, "bounty_chip", id)
+  expect([w.balance(A), w.balance(B), w.balance(BOUNTIES)]).toEqual([70, 95, 35])
+  expect((await click(A, "bounty_claim", id))!.text).toContain("can't claim your own")
+  await click(C, "bounty_claim", id)
+  expect((await click(B, "bounty_rule", `${id}:pay:${C}`))!.text).toContain("only <@UAAA> or an admin")
+  expect((await say(A, `${id} pay <@UAAA>`))!.text).toContain("can't pay your own bounty")
+  await click(A, "bounty_rule", `${id}:pay:${C}`)
+  expect([w.balance(C), w.balance(BOUNTIES)]).toEqual([135, 0])
+  // It is a gift from the bounty board, so it counts toward what C has been given by people.
+  expect(sources(w.ledger, C).colleagues).toBe(35 * CENTS)
+  expect((await click(A, "bounty_rule", `${id}:off`))!.text).toContain("closed")
+
+  // Called off, or left for a month, everyone gets back what they put in.
+  const off = button(await say(A, "10 water the plants"))
+  await click(B, "bounty_chip", off)
+  await click(A, "bounty_rule", `${off}:off`)
+  await say(B, "20 document the deploy")
+  clock.now += 31 * 24 * 60 * 60_000
+  await settle(w.ledger)
+  expect([w.balance(A), w.balance(B), w.balance(BOUNTIES)]).toEqual([70, 95, 0])
+  expect(w.total()).toBe(300)
 })

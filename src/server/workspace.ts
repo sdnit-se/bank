@@ -26,6 +26,8 @@ import { market, marketHelp, marketStats, portfolio, setupMarket } from "./marke
 import { convertToCents, inCents, money as currency } from "./money"
 import { slack, SlackError } from "./slack"
 import { casinoStats, sources } from "./stats"
+import { bounties, bountyClick, bountyHelp } from "./bounties"
+import { publishHome } from "./home"
 import { shop, shopClick, shopHelp } from "./shop"
 import { interact } from "./tables"
 import { titles, titlesOf } from "./titles"
@@ -121,6 +123,7 @@ export type EventEnvelope = {
     | ReactionEvent
     | MemberEvent
     | { type: "channel_created"; channel: { id: string } }
+    | { type: "app_home_opened"; user: string; tab: string }
     | { type: "app_uninstalled" | "tokens_revoked" }
 }
 
@@ -219,7 +222,8 @@ export class Workspace extends DurableObject<Env> {
 
   /** A click on a button under one of Bank's messages. */
   async interaction(input: { user: string; action: string; value: string }): Promise<SlackMessage> {
-    return (await shopClick(this.ledger(), input)) ?? interact(this.ledger(), input)
+    const ledger = this.ledger()
+    return (await shopClick(ledger, input)) ?? (await bountyClick(ledger, input)) ?? interact(ledger, input)
   }
 
   /** The daily round. */
@@ -1088,6 +1092,8 @@ export class Workspace extends DurableObject<Env> {
     if (traded) return traded
     const saved = await bonds(this.ledger(), { sub, words: words.slice(1), user: params.user_id, channel: params.channel ?? null })
     if (saved) return saved
+    const posted = await bounties(this.ledger(), { sub, words: words.slice(1), user: params.user_id, channel: params.channel ?? null })
+    if (posted) return posted
     const sold = await shop(this.ledger(), { sub, words: words.slice(1), user: params.user_id })
     if (sold) return sold
     const earned = titles(this.ledger(), { sub, user: params.user_id })
@@ -1127,6 +1133,7 @@ export class Workspace extends DurableObject<Env> {
         `\`/bank top\` · leaderboard`,
         `\`/bank history\` · your recent activity`,
       ],
+      bountyHelp(),
       casinoHelp(config),
       marketHelp(config),
       bondHelp(config),
@@ -1150,6 +1157,10 @@ export class Workspace extends DurableObject<Env> {
     if (!this.install()?.token) return
     if (event.type === "reaction_added" || event.type === "reaction_removed") {
       return this.reaction(event)
+    }
+    if (event.type === "app_home_opened") {
+      if (event.tab === "home") await publishHome(this.ledger(), event.user).catch((error: unknown) => console.error("home failed", error))
+      return
     }
     if (event.type === "channel_created") {
       // The event carries little about the channel, so look it up before joining.

@@ -2,7 +2,7 @@
 // last day off the ledger and gives each thing that happened a headline and a line about it. It doesn't explain how
 // the bank works; `/bank help` does that. Wording only: no coins move here. A day with nothing to report gets no paper.
 
-import { BONDS, CENTRAL, HOUSE, POOLS, POT } from "../shared/types"
+import { BONDS, BOUNTIES, CENTRAL, HOUSE, POOLS, POT } from "../shared/types"
 import type { matureBonds } from "./bonds"
 import { say, secureRand, type Line } from "./games"
 import { held, newsroom, section, type Block, type Ledger } from "./ledger"
@@ -20,6 +20,8 @@ export type Round = {
   matured: ReturnType<typeof matureBonds>
   /** Office bets called off for being open too long. */
   expired: string[]
+  /** Bounties called off for the same reason. */
+  abandoned: string[]
   honours: { user_id: string; title: string }[]
 }
 
@@ -79,6 +81,16 @@ const COPY = {
     () => `All placed by people who also lose at coin flips. Past performance, etc.`,
     () => `None of this is financial advice, mostly because none of it was advisable.`,
   ],
+  collected: [
+    () => `Somebody put a price on a problem and somebody else made it go away. Capitalism, briefly working as advertised.`,
+    () => `Paid on completion, no invoice, no net-30. Accounts payable could never.`,
+    () => `It had been on someone's list for weeks. The list is shorter now, and so is their patience with everyone else's.`,
+  ],
+  posted: [
+    () => `Somebody would rather pay than do it themselves, which is the most senior thing anyone did yesterday.`,
+    () => `The task has officially been ignored long enough to get a budget.`,
+  ],
+  abandoned: [() => `Thirty days, no takers, coins returned. The task remains, as tasks do.`],
   bought: [() => `Finally, a use for the currency that isn't losing it.`, () => `The coins bought an actual thing. Nobody saw that coming, least of all the coins.`],
 } satisfies Record<string, Line[]>
 
@@ -102,6 +114,7 @@ export async function publish(ledger: Ledger, round: Round, now = Date.now()) {
   const add = (map: Map<string, number>, id: string, amount: number) => map.set(id, (map.get(id) ?? 0) + amount)
   const day = { bets: 0, staked: 0, thanks: 0, duels: 0, trades: 0, traded: 0, lent: 0, robbed: 0, crew: 0, pooled: 0 }
   const bought: string[] = []
+  const collected: { to: string; amount: number; task: string }[] = []
   const callers = new Set<string>()
   const rows = ledger.sql
     .exec<{ kind: string; from_id: string | null; to_id: string | null; amount: number; note: string | null }>("select kind, from_id, to_id, amount, note from entries where at > ? order by id", since)
@@ -119,6 +132,8 @@ export async function publish(ledger: Ledger, round: Round, now = Date.now()) {
     } else if (row.kind === "payout" && row.from_id === POOLS && row.note === "the office pool") {
       callers.add(row.to_id!)
       day.pooled += row.amount
+    } else if (row.kind === "give" && row.from_id === BOUNTIES) {
+      collected.push({ to: row.to_id!, amount: row.amount, task: row.note ?? "a bounty" })
     } else if (row.kind === "give" || row.kind === "reaction") {
       day.thanks++
       add(thanked, row.to_id!, row.amount)
@@ -137,6 +152,9 @@ export async function publish(ledger: Ledger, round: Round, now = Date.now()) {
   // Two people who gave each other coins the same day, each pair once.
   const mutual = [...gave].map((pair) => pair.split(" ")).filter(([from, to]) => from! < to! && gave.has(`${to} ${from}`))
   const asked = ledger.sql.exec<{ id: number; question: string }>("select id, question from pools where at > ? order by id", since).toArray()
+  const pinned = ledger.sql
+    .exec<{ id: number; task: string; pot: number }>("select id, task, (select sum(amount) from bounty_funds where bounty = bounties.id) as pot from bounties where at > ? order by id", since)
+    .toArray()
 
   const stories: { head: string; body: string }[] = []
   const story = (head: string, ...body: (string | false | undefined)[]) => stories.push({ head, body: body.filter(Boolean).join(" ") })
@@ -164,6 +182,12 @@ export async function publish(ledger: Ledger, round: Round, now = Date.now()) {
     const [a, b] = mutual[0] ?? []
     story(`${coins(total)} given as thanks`, line(COPY.thanks, { who: at(top[0]), amount: coins(top[1]) }), a && b && line(COPY.mutual, { a: at(a), b: at(b) }))
   }
+  for (const bounty of collected.slice(0, 3)) story(`${at(bounty.to)} collected ${coins(bounty.amount)} for "${bounty.task}"`, line(COPY.collected))
+  if (pinned.length) {
+    const [first] = pinned
+    story(`New bounty: ${coins(first!.pot)} for "${first!.task}"`, line(COPY.posted), pinned.map((bounty) => `\`/bank bounty ${bounty.id}\``).join(", ") + " to claim it.")
+  }
+  if (round.abandoned.length) story(`"${round.abandoned[0]}" went unclaimed`, line(COPY.abandoned))
   const rate = config.taxes.interest
   if (round.matured) {
     const { owners, lent, paid, short } = round.matured

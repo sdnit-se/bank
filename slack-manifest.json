@@ -3,11 +3,11 @@
     "name": "Bank",
     "description": "A tiny currency for our Slack, with a casino, a stock market and a newspaper attached.",
     "background_color": "#1a1a1a",
-    "long_description": "Everyone starts with 100 coins. Give them away when someone helps you out: react to their message with a coin emoji, or run /bank give @someone 10. /bank balance, /bank top and /bank history show where you stand.\n\nThen lose them. /bank flip, /bank slots, /bank duel, /bank heist and /bank lottery are the casino, and /bank pool takes bets on whatever the office is arguing about. /bank shop is where coins buy something. /bank buy, /bank sell and /bank portfolio trade real stocks and crypto at real prices with play money. /bank help lists everything.\n\nThe leaderboard, the state of the economy and the casino's hall of shame are at https://labs.shebang.se/bank."
+    "long_description": "Everyone starts with 100 coins. Give them away when someone helps you out: react to their message with a coin emoji, or run /bank give @someone 10. /bank balance, /bank top and /bank history show where you stand. /bank bounty puts coins up for getting something done, paid to whoever does it.\n\nThen lose them. /bank flip, /bank slots, /bank duel, /bank heist and /bank lottery are the casino, and /bank pool takes bets on whatever the office is arguing about. /bank shop is where coins buy something. /bank buy, /bank sell and /bank portfolio trade real stocks and crypto at real prices with play money. /bank help lists everything.\n\nThe leaderboard, the state of the economy and the casino's hall of shame are at https://labs.shebang.se/bank."
   },
   "features": {
     "app_home": {
-      "home_tab_enabled": false,
+      "home_tab_enabled": true,
       "messages_tab_enabled": true,
       "messages_tab_read_only_enabled": true
     },
@@ -33,6 +33,13 @@
         "command": "/bank-top",
         "url": "https://labs.shebang.se/bank/slack/commands",
         "description": "The leaderboard",
+        "should_escape": true
+      },
+      {
+        "command": "/bank-bounty",
+        "url": "https://labs.shebang.se/bank/slack/commands",
+        "description": "Put coins up for getting something done",
+        "usage_hint": "30 fix the flaky e2e test",
         "should_escape": true
       },
       {
@@ -165,7 +172,8 @@
         "tokens_revoked",
         "team_join",
         "user_change",
-        "channel_created"
+        "channel_created",
+        "app_home_opened"
       ]
     },
     "org_deploy_enabled": false,
