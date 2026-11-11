@@ -40,6 +40,9 @@ export function tooFast(ledger: Ledger, user: string, kinds: EntryKind[], most =
   return recent >= most
 }
 
+/** Where the bank announces things: the channel an admin picked, or until they have, wherever a lottery ticket was last bought. */
+export const newsroom = (ledger: Ledger) => ledger.config().channel || ledger.meta<string>("lottery_channel")
+
 /** The daily round draws the lottery, settles the house, taxes wealth and pays back bonds. This makes sure one is coming. */
 export async function schedule(ledger: Ledger) {
   const next = nextDraw(Date.now())

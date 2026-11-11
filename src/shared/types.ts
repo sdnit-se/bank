@@ -42,6 +42,8 @@ export type Config = {
   market: Market
   taxes: Taxes
   shop: ShopItem[]
+  /** The id of the channel the morning paper and the bank's other announcements go to. Empty until an admin picks one. */
+  channel: string
 }
 
 export const defaultConfig: Config = {
@@ -60,6 +62,7 @@ export const defaultConfig: Config = {
   market: { enabled: false, fee: 1 },
   taxes: { transfer: 0, winnings: 0, wealth: 0, wealthAbove: 200, interest: 0 },
   shop: [],
+  channel: "",
 }
 
 /**
@@ -257,6 +260,8 @@ export type MarketStats = {
 export type Admin = { id: string; name: string; image: string | null; source: "installer" | "added" | "slack" }
 
 export type CustomEmoji = { name: string; url: string }
+
+export type Channel = { id: string; name: string }
 
 /** The ledger counts in hundredths of a coin. Everything shown to people, and sent to the web app, is in coins. */
 export const CENTS = 100

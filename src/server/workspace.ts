@@ -7,6 +7,7 @@ import {
   type Admin,
   type CasinoStats,
   type Config,
+  type Channel,
   type CustomEmoji,
   type Economy,
   type Entry,
@@ -125,6 +126,7 @@ export type EventEnvelope = {
 
 type SlackChannel = {
   id: string
+  name?: string
   is_member?: boolean
   is_archived?: boolean
   is_shared?: boolean
@@ -802,6 +804,11 @@ export class Workspace extends DurableObject<Env> {
         .map((item) => ({ name: clean(item.name, 60).replace(/[<>&*_~`]/g, ""), price: whole(item.price, 1) }))
         .filter((item) => item.name)
         .slice(0, 20),
+      channel: /^C[A-Z0-9]+$/.test(input.channel ?? this.settings().channel) ? (input.channel ?? this.settings().channel) : "",
+    }
+    // Bank can only post where it is a member.
+    if (config.channel && config.channel !== this.settings().channel) {
+      await this.call("conversations.join", { channel: config.channel }).catch((error: unknown) => console.error("join failed", config.channel, error))
     }
     const rateBefore = this.settings().taxes.interest
     this.setMeta("config", config)
@@ -905,6 +912,24 @@ export class Workspace extends DurableObject<Env> {
   async resyncMembers(viewer: Viewer) {
     this.assertAdmin(viewer)
     return { members: await this.syncMembers() }
+  }
+
+  /** The public channels an admin can send the morning paper to. */
+  async channels(viewer: Viewer): Promise<Channel[]> {
+    this.assertAdmin(viewer)
+    const found: Channel[] = []
+    let cursor: string | undefined
+    do {
+      const page = await this.call<{ channels: SlackChannel[]; response_metadata?: { next_cursor?: string } }>("conversations.list", {
+        types: "public_channel",
+        exclude_archived: true,
+        limit: 200,
+        cursor,
+      })
+      for (const channel of page.channels) if (!external(channel)) found.push({ id: channel.id, name: channel.name ?? channel.id })
+      cursor = page.response_metadata?.next_cursor || undefined
+    } while (cursor)
+    return found.sort((a, b) => a.name.localeCompare(b.name))
   }
 
   async joinChannels(viewer: Viewer) {

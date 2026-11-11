@@ -289,6 +289,7 @@ async function api(request: Request, env: Env, path: string) {
     return ws.removeAdmin(user, (await body<{ id: string }>()).id).then(() => ({ ok: true }))
   }
   if (route === "GET /admin/emoji") return ws.customEmoji(user)
+  if (route === "GET /admin/channels") return ws.channels(user)
   if (route === "POST /admin/join") return ws.joinChannels(user)
   if (route === "POST /admin/sync") return ws.resyncMembers(user)
   throw new HttpError(404, "not found")

@@ -5,7 +5,7 @@
 import { BONDS, CENTRAL, HOUSE, POOLS, POT } from "../shared/types"
 import type { matureBonds } from "./bonds"
 import { say, secureRand, type Line } from "./games"
-import { held, section, type Block, type Ledger } from "./ledger"
+import { held, newsroom, section, type Block, type Ledger } from "./ledger"
 import { money } from "./money"
 
 const NAME = "THE SHEBANG TIMES"
@@ -83,7 +83,7 @@ const COPY = {
 } satisfies Record<string, Line[]>
 
 export async function publish(ledger: Ledger, round: Round, now = Date.now()) {
-  const channel = ledger.meta<string>("lottery_channel")
+  const channel = newsroom(ledger)
   if (!channel) return false
   // Everything since the last round, so nothing is reported twice, and never more than two days of it.
   const since = Math.max(ledger.meta<number>("paper_at") ?? now - DAY, now - 2 * DAY)

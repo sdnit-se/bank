@@ -8,7 +8,7 @@
 
 import { BONDS, CENTRAL, CENTS, toCents, type Config } from "../shared/types"
 import { brokeLine, say, secureRand, type Line } from "./games"
-import { held, loud, quiet, schedule, tooFast, type Ledger, type Message } from "./ledger"
+import { held, loud, newsroom, quiet, schedule, tooFast, type Ledger, type Message } from "./ledger"
 import { money } from "./money"
 
 const WEEK = 7 * 24 * 60 * 60 * 1000
@@ -95,7 +95,7 @@ export function matureBonds(ledger: Ledger, now = Date.now()) {
 
 /** Tells the channel when the bond rate moves, the way a central bank would. */
 export async function announceRate(ledger: Ledger, before: number, after: number) {
-  const channel = ledger.meta<string>("lottery_channel")
+  const channel = newsroom(ledger)
   if (before === after || !channel) return
   const text =
     after === 0

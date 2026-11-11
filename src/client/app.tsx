@@ -3,6 +3,7 @@ import { Badge } from "@opencode/ui/badge"
 import { Button } from "@opencode/ui/button"
 import { Field } from "@opencode/ui/field"
 import { Icon } from "@opencode/ui/icon"
+import { Select } from "@opencode/ui/select"
 import { IconButton } from "@opencode/ui/icon-button"
 import { Switch as Toggle } from "@opencode/ui/switch"
 import { Tabs } from "@opencode/ui/tabs"
@@ -912,6 +913,9 @@ function SettingsPanel(props: { me: Me; changed: () => void }) {
   const [saved, setSaved] = createSignal<Config>(structuredClone(props.me.config))
   const [draft, setDraft] = createStore<Config>(structuredClone(props.me.config))
   const [custom] = createResource(() => api.emoji().catch(() => []))
+  const [found] = createResource(() => api.channels().catch(() => []))
+  // Until one is picked, the paper follows the lottery around.
+  const channels = createMemo(() => [{ id: "", name: "Wherever the last lottery ticket was bought" }, ...(found() ?? []).map((channel) => ({ ...channel, name: `#${channel.name}` }))])
   const urls = createMemo(
     () => new Map([...Object.entries(props.me.emoji), ...(custom() ?? []).map((item) => [item.name, item.url] as const)]),
   )
@@ -1028,6 +1032,21 @@ function SettingsPanel(props: { me: Me; changed: () => void }) {
           <NumberField label="Wealth above" value={draft.taxes.wealthAbove} set={(value) => setDraft("taxes", "wealthAbove", value)} />
           <NumberField decimal label="Bond rate, % a week" value={draft.taxes.interest} set={(value) => setDraft("taxes", "interest", value)} />
         </Numbers>
+
+        <div class="setting">
+          <div class="min-w-0">
+            <div class="strong">Morning paper</div>
+            <div class="muted">Where Bank posts the day's news at 09:00, and anything else it has to announce.</div>
+          </div>
+          <Select
+            class="shrink-0 max-w-[50%]"
+            options={channels()}
+            current={channels().find((channel) => channel.id === draft.channel) ?? channels()[0]}
+            value={(channel) => channel.id}
+            label={(channel) => channel.name}
+            onSelect={(channel) => setDraft("channel", channel?.id ?? "")}
+          />
+        </div>
 
         <div class="flex flex-col gap-2">
           <div class="flex items-baseline justify-between gap-3">
