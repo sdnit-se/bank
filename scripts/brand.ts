@@ -51,48 +51,60 @@ function coin(cx: number, cy: number, r: number, edge: string) {
 }
 
 /**
- * A temple-fronted bank, drawn the way the logo is: the front is seen straight on and everything else recedes up and
- * to the right at 45 degrees. That keeps the pediment flat, so the logo sits on it undistorted.
+ * A temple-fronted bank in true isometric, the projection the manual's illustrations use: width runs down to the
+ * right, depth down to the left, both at 30 degrees, and height straight up. Every block shows its top, its front
+ * and its right side.
  */
-function bank() {
-  const LEFT = 107
-  const GROUND = 884
-  /** Where a point `x` across, `y` up and `z` back lands on the page. */
-  const at = (x: number, y: number, z: number) => `${LEFT + x + z / 2},${GROUND - y - z / 2}`
-  const face = (fill: string, ...points: [number, number, number][]) =>
-    `<polygon points="${points.map((point) => at(...point)).join(" ")}" fill="${fill}"/>`
-  /** A block: ivory front, yellow top, blue side, unless told otherwise. */
-  const block = (x: [number, number], y: [number, number], z: [number, number], front = IVORY, top = YELLOW, side = BLUE) =>
-    face(top, [x[0], y[1], z[0]], [x[1], y[1], z[0]], [x[1], y[1], z[1]], [x[0], y[1], z[1]]) +
-    face(side, [x[1], y[0], z[0]], [x[1], y[1], z[0]], [x[1], y[1], z[1]], [x[1], y[0], z[1]]) +
-    face(front, [x[0], y[0], z[0]], [x[1], y[0], z[0]], [x[1], y[1], z[0]], [x[0], y[1], z[0]])
+function bank(size: number) {
+  type Point = [x: number, y: number, z: number]
+  const flat = ([x, y, z]: Point): [number, number] => [(x - z) * 0.866, (x + z) / 2 - y]
+  const faces: { fill: string; points: Point[] }[] = []
+  const face = (fill: string, ...points: Point[]) => void faces.push({ fill, points })
+  /** A block: yellow on top, ivory in front, blue on the right, unless told otherwise. */
+  const block = (x: [number, number], y: [number, number], z: [number, number], front = IVORY, right = BLUE, top = YELLOW) => {
+    face(top, [x[0], y[1], z[0]], [x[1], y[1], z[0]], [x[1], y[1], z[1]], [x[0], y[1], z[1]])
+    face(front, [x[0], y[0], z[1]], [x[1], y[0], z[1]], [x[1], y[1], z[1]], [x[0], y[1], z[1]])
+    face(right, [x[1], y[0], z[0]], [x[1], y[0], z[1]], [x[1], y[1], z[1]], [x[1], y[1], z[0]])
+  }
 
-  const column = (x: number) =>
-    block([x - 9, x + 67], [68, 86], [35, 111]) + block([x, x + 58], [86, 300], [44, 102]) + block([x - 9, x + 67], [300, 318], [35, 111])
+  // Two steps, the walls, four evenly spaced columns along the front, the beam they carry, and the roof.
+  block([0, 420], [0, 30], [0, 340])
+  block([22, 398], [30, 60], [22, 318])
+  block([70, 350], [60, 278], [70, 250], RED, RED)
+  for (const x of [36, 141.33, 246.67, 352]) {
+    block([x - 6, x + 38], [60, 74], [268, 312])
+    block([x, x + 32], [74, 264], [274, 306])
+    block([x - 6, x + 38], [264, 278], [268, 312])
+  }
+  block([26, 394], [278, 312], [26, 314])
+  const [eave, ridge, near, far] = [312, 438, 328, 12]
+  // The roof is shallow enough that the far slope shows past the ridge as well.
+  face(YELLOW, [12, eave, near], [210, ridge, near], [210, ridge, far], [12, eave, far])
+  face(YELLOW, [210, ridge, near], [408, eave, near], [408, eave, far], [210, ridge, far])
+  face(IVORY, [12, eave, near], [408, eave, near], [210, ridge, near])
+  // A coin in the gable.
+  face(RED, ...Array.from({ length: 48 }, (_, step): Point => {
+    const angle = (step / 48) * Math.PI * 2
+    return [210 + 27 * Math.cos(angle), eave + 46 + 27 * Math.sin(angle), near]
+  }))
 
-  // The pediment, and the largest the logo can be inside it with room on every side.
-  const [eave, peak, front, back] = [362, 606, 8, 292]
-  const [low, room] = [26, 26]
-  const wide = (632 * (1 - low / (peak - eave)) - 2 * room) / (1 + (LOGO * 632) / (peak - eave))
-  const [mx, my] = at(330, eave + low, front).split(",").map(Number) as [number, number]
-
-  return `<g stroke="${BURGUNDY}" stroke-width="7" stroke-linejoin="round">
-    ${block([0, 660], [0, 34], [0, 300])}
-    ${block([30, 630], [34, 68], [22, 278])}
-    ${block([90, 570], [68, 318], [120, 262], RED)}
-    ${face(BURGUNDY, [268, 68, 120], [322, 68, 120], [322, 262, 120], [268, 262, 120])}
-    ${[60, 221, 381, 542].map(column).join("")}
-    ${block([36, 624], [318, 362], [30, 272])}
-    ${face(YELLOW, [14, eave, front], [330, peak, front], [330, peak, back], [14, eave, back])}
-    ${face(RED, [330, peak, front], [646, eave, front], [646, eave, back], [330, peak, back])}
-    ${face(IVORY, [14, eave, front], [646, eave, front], [330, peak, front])}
-  </g>
-  <image href="${logo}" x="${mx - wide / 2}" y="${my - wide * LOGO}" width="${wide}" height="${wide * LOGO}"/>`
+  // Centre the drawing on the page whatever its shape, leaving a margin.
+  const all = faces.flatMap((item) => item.points.map(flat))
+  const [left, right] = [Math.min(...all.map(([x]) => x)), Math.max(...all.map(([x]) => x))]
+  const [top, bottom] = [Math.min(...all.map(([, y]) => y)), Math.max(...all.map(([, y]) => y))]
+  const scale = (size * 0.66) / Math.max(right - left, bottom - top)
+  const place = (point: Point) => {
+    const [x, y] = flat(point)
+    return `${(size / 2 + (x - (left + right) / 2) * scale).toFixed(1)},${(size / 2 + (y - (top + bottom) / 2) * scale).toFixed(1)}`
+  }
+  return `<g stroke="${BURGUNDY}" stroke-width="${(size / 1024) * 6}" stroke-linejoin="round">${faces
+    .map((item) => `<polygon points="${item.points.map(place).join(" ")}" fill="${item.fill}"/>`)
+    .join("")}</g>`
 }
 
 const icon = `<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
   <rect width="1024" height="1024" fill="${BURGUNDY}"/>
-  <g transform="translate(512 512) scale(0.9) translate(-512 -512)">${bank()}</g>
+  ${bank(1024)}
 </svg>`
 
 const card = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">

@@ -9,7 +9,7 @@ import { Tabs } from "@opencode/ui/tabs"
 import { TextInput } from "@opencode/ui/text-input"
 import { createMemo, createResource, createRoot, createSignal, For, type JSX, Match, Show, Switch } from "solid-js"
 import { createStore, reconcile, unwrap } from "solid-js/store"
-import { CENTRAL, currency, HOUSE, type Config, type CustomEmoji, type Entry, type History, type Me } from "../shared/types"
+import { CENTRAL, currency, HOUSE, INSTITUTIONS, type Config, type CustomEmoji, type Entry, type History, type Me } from "../shared/types"
 import { api, ApiError, BASE, type Person } from "./api"
 import { EconomyView } from "./economy"
 
@@ -420,7 +420,12 @@ function ActivityList(props: { history: History | undefined; me: Me; viewer: str
             {(entry) => {
               const incoming = () => props.viewer !== null && entry.to === props.viewer
               const outgoing = () => props.viewer !== null && entry.from === props.viewer
-              const other = () => (incoming() ? entry.from : entry.to)
+              // The house, the pot and the central bank have no face, so a bet shows the person who made it.
+              const other = () => {
+                const [first, second] = incoming() ? [entry.from, entry.to] : [entry.to, entry.from]
+                const person = (id: string | null) => (id && !(id in INSTITUTIONS) ? id : null)
+                return person(first) ?? (first && first in INSTITUTIONS ? person(second) : first)
+              }
               const person = () => (other() ? props.history!.people[other()!] : undefined)
               return (
                 <div class="row flex items-center gap-3 px-4 py-2.5">
