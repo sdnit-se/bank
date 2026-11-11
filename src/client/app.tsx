@@ -12,6 +12,7 @@ import { createStore, reconcile, unwrap } from "solid-js/store"
 import { amountText, CENTRAL, currency, HOUSE, INSTITUTIONS, type Config, type CustomEmoji, type Entry, type History, type Me } from "../shared/types"
 import { api, ApiError, BASE, type Person } from "./api"
 import { EconomyView } from "./economy"
+import { PortfolioView } from "./portfolio"
 
 export function App() {
   const [me, { refetch }] = createResource(() =>
@@ -219,6 +220,7 @@ function Dashboard(props: { me: Me; refresh: () => void }) {
   const [leaderboard, leaderboardActions] = createResource(() => api.leaderboard())
   const [history, historyActions] = createResource(() => api.history())
   const [economy, economyActions] = createResource(() => api.economy())
+  const [portfolio] = createResource(() => api.portfolio())
   const reload = () => {
     props.refresh()
     leaderboardActions.refetch()
@@ -264,6 +266,9 @@ function Dashboard(props: { me: Me; refresh: () => void }) {
             <Tabs.Trigger value="leaderboard">Leaderboard</Tabs.Trigger>
             <Tabs.Trigger value="activity">Activity</Tabs.Trigger>
             <Tabs.Trigger value="economy">Economy</Tabs.Trigger>
+            <Show when={config().market.enabled}>
+              <Tabs.Trigger value="portfolio">Portfolio</Tabs.Trigger>
+            </Show>
             <Tabs.Trigger value="give">Give</Tabs.Trigger>
             <Show when={props.me.admin}>
               <Tabs.Trigger value="admin">Admin</Tabs.Trigger>
@@ -280,6 +285,9 @@ function Dashboard(props: { me: Me; refresh: () => void }) {
           </Match>
           <Match when={tab() === "economy"}>
             <EconomyView config={config()} economy={economy()} />
+          </Match>
+          <Match when={tab() === "portfolio"}>
+            <PortfolioView config={config()} portfolio={portfolio()} />
           </Match>
           <Match when={tab() === "give"}>
             <GiveView me={props.me} done={reload} />
@@ -397,6 +405,14 @@ function describe(entry: Entry, history: History, viewer: string | null) {
       return "the house paid its winnings to the central bank"
     case "stimulus":
       return `the central bank paid ${name(entry.to)}`
+    case "buy":
+      return `${name(entry.from)} bought ${entry.note ?? "shares"}`
+    case "sell":
+      return `${name(entry.to)} sold ${entry.note ?? "shares"}`
+    case "tax":
+      return `${name(entry.actor ?? entry.from)} paid a ${entry.note ?? "tax"}`
+    case "print":
+      return `the market printed ${viewer === entry.actor ? "your" : `${name(entry.actor)}'s`} gain on ${entry.note ?? "a sale"}`
     default:
       return `${name(entry.from)} gave ${name(entry.to)}${via}`
   }
@@ -404,7 +420,7 @@ function describe(entry: Entry, history: History, viewer: string | null) {
 
 /** Entries whose note is written by Bank and already part of the description. */
 function fixedNote(entry: Entry) {
-  return ["grant", "bet", "payout", "duel", "sweep", "stimulus"].includes(entry.kind)
+  return ["grant", "bet", "payout", "duel", "sweep", "stimulus", "buy", "sell", "tax", "print"].includes(entry.kind)
 }
 
 const page = 30
@@ -896,6 +912,33 @@ function SettingsPanel(props: { me: Me; changed: () => void }) {
           </div>
           <Toggle checked={draft.games.enabled} onChange={(value: boolean) => setDraft("games", "enabled", value)} aria-label="Open the casino" />
         </div>
+
+        <div class="setting">
+          <div class="min-w-0">
+            <div class="strong">Stock market</div>
+            <div class="muted">
+              Real prices, play money, under <Code>/bank buy</Code>, <Code>sell</Code> and <Code>portfolio</Code>.
+            </div>
+          </div>
+          <Toggle checked={draft.market.enabled} onChange={(value: boolean) => setDraft("market", "enabled", value)} aria-label="Open the stock market" />
+        </div>
+
+        <Show when={draft.market.enabled}>
+          <div class="flex flex-col gap-2">
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <Label text="Trading fee, %">
+                <TextInput
+                  class="w-full"
+                  numeric
+                  inputmode="decimal"
+                  value={String(draft.market.fee)}
+                  onInput={(event) => setDraft("market", "fee", Number(event.currentTarget.value.replace(",", ".").replace(/[^0-9.]/g, "")) || 0)}
+                />
+              </Label>
+            </div>
+            <p class="faint m-0">The fee on every trade goes to the central bank.</p>
+          </div>
+        </Show>
 
         <Show when={draft.games.enabled}>
           <div class="flex flex-col gap-2">

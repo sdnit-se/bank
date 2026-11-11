@@ -12,11 +12,12 @@ import {
   type EntryKind,
   type History,
   type Me,
+  type Portfolio,
   toCents,
 } from "../shared/types"
 import { economy, historyLine, play, settle, setup, type Ledger } from "./casino"
 import type { Env } from "./env"
-import { market } from "./market"
+import { market, portfolio, setupMarket, tradeLine } from "./market"
 import { importHistory } from "./migrate"
 import { convertToCents, inCents, money as currency } from "./money"
 import { slack, SlackError } from "./slack"
@@ -185,6 +186,7 @@ export class Workspace extends DurableObject<Env> {
       this.sql.exec("alter table accounts add column gone integer not null default 0")
     }
     setup(this.sql)
+    setupMarket(this.sql)
     this.ctx.storage.transactionSync(() => convertToCents(this.sql))
   }
 
@@ -213,6 +215,10 @@ export class Workspace extends DurableObject<Env> {
     return economy(this.ledger())
   }
 
+  async portfolio(viewer: Viewer): Promise<Portfolio> {
+    return portfolio(this.ledger(), viewer.id)
+  }
+
   // ---------- storage helpers
 
   private meta<T>(key: string): T | null {
@@ -239,6 +245,7 @@ export class Workspace extends DurableObject<Env> {
     // Configs saved before the symbol became an emoji held a literal character.
     if (!EMOJI_NAME.test(config.symbol)) config.symbol = defaultConfig.symbol
     config.games = { ...defaultConfig.games, ...config.games }
+    config.market = { ...defaultConfig.market, ...config.market }
     return config
   }
 
@@ -744,6 +751,7 @@ export class Workspace extends DurableObject<Env> {
       .slice(0, 24)
     // A client from before the games existed sends none, and shouldn't switch them off by saving.
     const games = input.games ?? this.settings().games
+    const market = input.market ?? this.settings().market
     const whole = (value: unknown, least: number) => Math.max(least, Math.min(1_000_000, Math.floor(Number(value) || 0)))
     const config: Config = {
       singular: clean(input.singular, 32).replace(/[<>&*_~`]/g, "") || defaultConfig.singular,
@@ -755,6 +763,7 @@ export class Workspace extends DurableObject<Env> {
       emoji,
       notify: Boolean(input.notify),
       games: { enabled: Boolean(games.enabled), maxBet: whole(games.maxBet, 1), reserve: whole(games.reserve, 0) },
+      market: { enabled: Boolean(market.enabled), fee: Math.max(0, Math.min(25, Math.round(Number(market.fee) * 10) / 10 || 0)) },
     }
     this.setMeta("config", config)
     return config
@@ -976,7 +985,7 @@ export class Workspace extends DurableObject<Env> {
       const lines = rows.map((row) => {
         const amount = currency(config, row.amount)
         const note = row.note ? ` · ${escape(row.note)}` : ""
-        const game = historyLine(row, params.user_id, amount)
+        const game = historyLine(row, params.user_id, amount) ?? tradeLine(row, params.user_id, amount)
         if (game) return game
         if (row.kind === "grant") return `+${amount} starting balance`
         if (row.kind === "adjust") return row.to_id === params.user_id ? `+${amount} from an admin${note}` : `-${amount} by an admin${note}`
@@ -991,8 +1000,8 @@ export class Workspace extends DurableObject<Env> {
     // The games claim their own words before anything with a mention and a number is taken for a gift.
     const played = await play(this.ledger(), { sub, words: words.slice(1), user: params.user_id, channel: params.channel ?? null })
     if (played) return played
-    const quoted = await market(this.ledger(), { sub, words: words.slice(1) })
-    if (quoted) return quoted
+    const traded = await market(this.ledger(), { sub, words: words.slice(1), user: params.user_id })
+    if (traded) return traded
 
     // give / send / pay, or just "/bank @someone 10"
     const rest = ["give", "send", "pay", "tip"].includes(sub) ? words.slice(1) : words
@@ -1025,6 +1034,7 @@ export class Workspace extends DurableObject<Env> {
       `\`/bank top\` · leaderboard`,
       `\`/bank history\` · your recent activity`,
       config.games.enabled ? `\`/bank casino\` · flip, slots, duels and the lottery` : "",
+      config.market.enabled ? `\`/bank buy ERIC-B.ST 20\` · real prices, play money. also \`sell\`, \`price\`, \`portfolio\`` : "",
       emoji ? `or react to a message to give: ${emoji}` : "",
       `<${this.env.PUBLIC_URL}|open bank>`,
     ]

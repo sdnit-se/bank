@@ -161,7 +161,7 @@ export function EconomyView(props: { config: Config; economy: Economy | undefine
                 {signed(economy().growth.month)} {props.config.plural}
               </Tile>
               <Tile label="Central bank" value={number(economy().supply.central)}>
-                house {number(economy().supply.house)} · pot {number(economy().supply.pot)}
+                house {number(economy().supply.house)} · pot {number(economy().supply.pot)} · market {number(economy().supply.market)}
               </Tile>
               <Tile label="Casino · 7 days" value={number(economy().turnover.week)}>
                 {number(economy().turnover.month)} in 30 days

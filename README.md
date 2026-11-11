@@ -19,6 +19,10 @@ Slack doesn't let apps upload custom emoji, so workspaces add the coin images th
   the house wins beyond its reserve goes to a central bank at the daily draw, which puts a tenth of what it holds
   back into the pot.
 - **An Economy tab**: money supply, GDP (coins given between people), inflation, and who holds what.
+- **A stock market**, off until an admin opens it: `/bank buy ERIC-B.ST 20`, `/bank sell`, `/bank portfolio`,
+  `/bank price`. Real prices from Yahoo Finance, play money. A position follows its share's percentage move. Losses
+  stay in the market and pay for gains; it prints only what it lacks. Each trade is taxed to the central bank.
+  `src/server/market.ts`.
 - **Cents.** The ledger counts in hundredths of a coin (`src/server/money.ts`), so `/bank give @someone 0.5` works and
   a tax or a share price can move less than a whole coin. People still type and read coins; reactions and lottery
   tickets stay whole. A ledger kept in whole coins is converted once, on the first start of this version.

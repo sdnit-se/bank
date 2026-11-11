@@ -7,7 +7,7 @@
 // Like the rest of the ledger this counts in cents, and the settings it is handed are in cents too. The economy
 // figures are the one thing that leaves here for the web app, so they go out in coins.
 
-import { CENTRAL, CENTS, HOUSE, INSTITUTIONS, POT, toCents, type Config, type Economy, type EntryKind } from "../shared/types"
+import { CENTRAL, CENTS, HOUSE, INSTITUTIONS, MARKET, POT, toCents, type Config, type Economy, type EntryKind } from "../shared/types"
 import type { Env } from "./env"
 import { money as currency } from "./money"
 import {
@@ -302,6 +302,7 @@ export function economy(ledger: Ledger): Economy {
     house: held(ledger, HOUSE),
     pot: held(ledger, POT),
     central: held(ledger, CENTRAL),
+    market: held(ledger, MARKET),
   }
 
   // An entry with no sender created coins and one with no recipient destroyed them. Everything else only moved them.
@@ -338,7 +339,8 @@ export function economy(ledger: Ledger): Economy {
       house: coins(supply.house),
       pot: coins(supply.pot),
       central: coins(supply.central),
-      total: coins(supply.people + supply.house + supply.pot + supply.central),
+      market: coins(supply.market),
+      total: coins(supply.people + supply.house + supply.pot + supply.central + supply.market),
     },
     members: active.length,
     growth: { week: coins(days[29]!.supply - days[22]!.supply), month: coins(days[29]!.supply - before) },

@@ -20,7 +20,7 @@
         "command": "/bank",
         "url": "https://labs.shebang.se/bank/slack/commands",
         "description": "Give coins, or see what else Bank does",
-        "usage_hint": "give @someone 10 for the fix \u00b7 history \u00b7 casino \u00b7 help",
+        "usage_hint": "give @someone 10 for the fix \u00b7 history \u00b7 casino \u00b7 portfolio \u00b7 help",
         "should_escape": true
       },
       {
@@ -61,6 +61,33 @@
         "url": "https://labs.shebang.se/bank/slack/commands",
         "description": "Buy tickets for the daily draw",
         "usage_hint": "5",
+        "should_escape": true
+      },
+      {
+        "command": "/bank-buy",
+        "url": "https://labs.shebang.se/bank/slack/commands",
+        "description": "Put coins into a real stock or crypto",
+        "usage_hint": "ERIC-B.ST 20",
+        "should_escape": true
+      },
+      {
+        "command": "/bank-sell",
+        "url": "https://labs.shebang.se/bank/slack/commands",
+        "description": "Take coins out at today's price",
+        "usage_hint": "ERIC-B.ST 20 \u00b7 ERIC-B.ST all",
+        "should_escape": true
+      },
+      {
+        "command": "/bank-portfolio",
+        "url": "https://labs.shebang.se/bank/slack/commands",
+        "description": "What you hold and what it is worth",
+        "should_escape": true
+      },
+      {
+        "command": "/bank-price",
+        "url": "https://labs.shebang.se/bank/slack/commands",
+        "description": "Look a price up",
+        "usage_hint": "ERIC-B.ST \u00b7 AAPL \u00b7 BTC-USD",
         "should_escape": true
       }
     ]

@@ -8,6 +8,12 @@ export type Games = {
   reserve: number
 }
 
+export type Market = {
+  enabled: boolean
+  /** What a trade costs, in percent of its size. It goes to the central bank. */
+  fee: number
+}
+
 export type Config = {
   singular: string
   plural: string
@@ -17,6 +23,7 @@ export type Config = {
   emoji: EmojiValue[]
   notify: boolean
   games: Games
+  market: Market
 }
 
 export const defaultConfig: Config = {
@@ -32,12 +39,17 @@ export const defaultConfig: Config = {
   ],
   notify: true,
   games: { enabled: false, maxBet: 25, reserve: 500 },
+  market: { enabled: false, fee: 1 },
 }
 
 /**
  * `bet` is a stake going to the house or the lottery pot, `payout` is what comes back, and `duel` goes from the loser
  * of a duel to the winner. `sweep` is the house handing its winnings beyond the reserve to the central bank, and
  * `stimulus` is the central bank paying out, to the lottery pot or to people.
+ *
+ * `buy` puts coins into the market against a share price and `sell` takes them out at the price of the day. `tax`
+ * goes to the central bank. `print` is the market creating the coins it lacks to pay someone who sold at a profit:
+ * along with a grant or an adjustment, the only kind that adds to how many coins exist.
  */
 export type EntryKind =
   | "grant"
@@ -50,6 +62,10 @@ export type EntryKind =
   | "duel"
   | "sweep"
   | "stimulus"
+  | "buy"
+  | "sell"
+  | "tax"
+  | "print"
 
 /**
  * The accounts that aren't people. They hold coins like anyone else, so games move coins around without creating or
@@ -58,10 +74,12 @@ export type EntryKind =
 export const HOUSE = "HOUSE"
 export const POT = "POT"
 export const CENTRAL = "CENTRAL"
+export const MARKET = "MARKET"
 export const INSTITUTIONS: Record<string, string> = {
   [HOUSE]: "the house",
   [POT]: "the lottery pot",
   [CENTRAL]: "the central bank",
+  [MARKET]: "the market",
 }
 
 export type Entry = {
@@ -114,7 +132,7 @@ export type EconomyDay = {
 }
 
 export type Economy = {
-  supply: { people: number; house: number; pot: number; central: number; total: number }
+  supply: { people: number; house: number; pot: number; central: number; market: number; total: number }
   members: number
   /** Coins created minus coins destroyed, over the last 7 and 30 days. */
   growth: { week: number; month: number }
@@ -131,6 +149,19 @@ export type Economy = {
   /** The last 30 days, oldest first. */
   days: EconomyDay[]
 }
+
+export type Position = {
+  symbol: string
+  name: string
+  /** What was put in, after fees. */
+  cost: number
+  /** What it would sell for now, before the fee, or null when there is no price to be had. */
+  value: number | null
+  /** Whether it can be traded this minute. */
+  live: boolean
+}
+
+export type Portfolio = { positions: Position[]; fee: number; enabled: boolean }
 
 export type Admin = { id: string; name: string; image: string | null; source: "installer" | "added" | "slack" }
 
