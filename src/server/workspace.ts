@@ -1153,6 +1153,19 @@ export class Workspace extends DurableObject<Env> {
         user: event.user,
         text: `your :${name}: didn't go through: ${result.message}`,
       }).catch((error) => console.error("ephemeral failed", error))
+      // The coin stays on the message (Slack won't let an app remove someone else's reaction), so tell the recipient it
+      // didn't count. Once per reaction, so toggling it can't spam them.
+      const recipient = this.row(to)
+      const first = this.sql
+        .exec("insert or ignore into events (id, at) values (?, ?)", `bounce:${key}`, Date.now()).rowsWritten
+      if (config.notify && first && recipient && !recipient.bot && !recipient.gone) {
+        const where = link ? ` on <${link}|your message>` : ""
+        await this.call("chat.postMessage", {
+          channel: to,
+          text: `heads up: the :${name}: <@${event.user}> reacted with${where} didn't go through, so no ${config.plural} moved`,
+          unfurl_links: false,
+        }).catch((error) => console.error("bounce notify failed", error))
+      }
       return
     }
     if (config.notify) {
