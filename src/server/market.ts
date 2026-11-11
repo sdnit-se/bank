@@ -133,13 +133,13 @@ const BOUGHT: Line[] = [
 
 const SOLD_UP: Line[] = [
   (w) => `${w.user} sold ${w.symbol} for *${w.amount}*, up ${w.change}. insufferable until further notice.`,
-  (w) => `${w.user} cashed out ${w.symbol} for *${w.amount}*, a profit of ${w.profit}. even a blind squirrel.`,
+  (w) => `${w.user} cashed out ${w.symbol} for *${w.amount}*, a profit of ${w.profit} (${w.change}). even a blind squirrel.`,
   (w) => `${w.user} took *${w.amount}* out of ${w.symbol}, ${w.change}. will now explain investing to everyone at lunch.`,
 ]
 
 const SOLD_DOWN: Line[] = [
   (w) => `${w.user} sold ${w.symbol} for *${w.amount}*, down ${w.change}. buy high, sell low, as tradition demands.`,
-  (w) => `${w.user} took a ${w.profit} loss on ${w.symbol}. the stock didn't fail you, your timing did.`,
+  (w) => `${w.user} took a ${w.profit} loss on ${w.symbol} (${w.change}). the stock didn't fail you, your timing did.`,
   (w) => `${w.user} got *${w.amount}* back out of ${w.symbol}, ${w.change}. a tuition payment to the market.`,
 ]
 
