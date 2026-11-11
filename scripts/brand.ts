@@ -118,14 +118,12 @@ const card = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" 
   </g>
 </svg>`
 
-// The favicon is the coin alone, with a little room for its edge.
-const favicon = `<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">${coin(236, 236, 216, RED)}</svg>`
-
 mkdirSync("art/shebang", { recursive: true })
 for (const [svg, output, size] of [
   [icon, "art/shebang/app-icon.png", 1024],
   [card, "public/og.png", 1200],
-  [favicon, "public/coin.png", 256],
+  // The browser tab shows the same bank as the bot.
+  [icon, "public/icon.png", 256],
 ] as const) {
   await sharp(Buffer.from(svg), { density: 144 }).resize(size).png({ compressionLevel: 9 }).toFile(output)
   console.log(output)
