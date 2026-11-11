@@ -50,7 +50,8 @@ function Chart(props: { days: EconomyDay[]; value: (day: EconomyDay) => number; 
     // Bars measure from zero. A line may zoom in, with a little room so a flat series sits mid-chart.
     if (props.kind === "bars") return ticks(0, Math.max(high, 3))
     const room = Math.max((high - low) * 0.1, high * 0.005, 1)
-    return ticks(low - room, high + room)
+    // Nothing here can go below zero, so the axis doesn't either.
+    return ticks(low >= 0 ? Math.max(0, low - room) : low - room, high + room)
   })
   const inner = () => ({ width: width() - MARGIN.left - MARGIN.right, height: HEIGHT - MARGIN.top - MARGIN.bottom })
   const band = () => inner().width / props.days.length
@@ -129,13 +130,12 @@ function Chart(props: { days: EconomyDay[]; value: (day: EconomyDay) => number; 
   )
 }
 
-function Section(props: { title: string; description: string; children: JSX.Element }) {
+function Section(props: { title: string; note: string; children: JSX.Element }) {
   return (
     <section class="card overflow-hidden">
-      <div class="p-4 pb-2 flex flex-col gap-0.5">
-        <h2 class="strong m-0 text-[13px] leading-5">{props.title}</h2>
-        <div class="muted text-pretty">{props.description}</div>
-      </div>
+      <h2 class="m-0 p-4 pb-2 text-[13px] leading-5 font-[inherit]">
+        <span class="strong">{props.title}</span> <span class="faint">· {props.note}</span>
+      </h2>
       <div class="px-2 pb-3">{props.children}</div>
     </section>
   )
@@ -152,35 +152,35 @@ export function EconomyView(props: { config: Config; economy: Economy | undefine
           <div class="flex flex-col gap-4">
             <section class="card p-5 grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-5">
               <Tile label="Money supply" value={number(economy().supply.total)}>
-                {number(economy().supply.people)} with {economy().members} people
+                {number(economy().supply.people)} held by {economy().members} people
               </Tile>
-              <Tile label="GDP, last 7 days" value={number(economy().gdp.week)}>
-                {props.config.plural} given for something useful. {number(economy().gdp.month)} in 30 days
+              <Tile label="GDP · 7 days" value={number(economy().gdp.week)}>
+                {number(economy().gdp.month)} in 30 days
               </Tile>
-              <Tile label="Inflation, last 30 days" value={before() > 0 ? `${signed(Math.round((economy().growth.month / before()) * 1000) / 10)}%` : "new"}>
-                {signed(economy().growth.month)} {props.config.plural} printed or destroyed
+              <Tile label="Inflation · 30 days" value={before() > 0 ? `${signed(Math.round((economy().growth.month / before()) * 1000) / 10)}%` : "new"}>
+                {signed(economy().growth.month)} {props.config.plural}
               </Tile>
               <Tile label="Central bank" value={number(economy().supply.central)}>
-                house {number(economy().supply.house)}, lottery pot {number(economy().supply.pot)}
+                house {number(economy().supply.house)} · pot {number(economy().supply.pot)}
               </Tile>
-              <Tile label="Casino turnover, last 7 days" value={number(economy().turnover.week)}>
-                {props.config.plural} staked. {number(economy().turnover.month)} in 30 days
+              <Tile label="Casino · 7 days" value={number(economy().turnover.week)}>
+                {number(economy().turnover.month)} in 30 days
               </Tile>
-              <Tile label="Richest person holds" value={percent(economy().richestShare)}>
-                inequality {economy().gini.toFixed(2)} of 1, {economy().broke} {economy().broke === 1 ? "person has" : "people have"} nothing
+              <Tile label="Richest holds" value={percent(economy().richestShare)}>
+                {economy().broke} broke · gini {economy().gini.toFixed(2)}
               </Tile>
             </section>
 
-            <Section title="Money supply" description={`Every ${props.config.singular} in existence, over the last 30 days. It moves when someone joins or an admin prints or destroys some.`}>
+            <Section title="Money supply" note="30 days">
               <Chart days={economy().days} value={(day) => day.supply} kind="line" unit={coins} />
             </Section>
 
-            <Section title="GDP per day" description={`${props.config.plural[0]!.toUpperCase()}${props.config.plural.slice(1)} given from one person to another, by gift or reaction.`}>
+            <Section title="GDP per day" note={`${props.config.plural} given between people`}>
               <Chart days={economy().days} value={(day) => day.gifts} kind="bars" unit={coins} />
             </Section>
 
             <details class="card">
-              <summary class="px-4 py-3 cursor-pointer muted">The same figures as a table</summary>
+              <summary class="px-4 py-3 cursor-pointer muted">Table</summary>
               <div class="overflow-x-auto">
                 <table class="chart-table">
                   <thead>

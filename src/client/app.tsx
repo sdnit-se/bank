@@ -886,8 +886,7 @@ function SettingsPanel(props: { me: Me; changed: () => void }) {
           <div class="min-w-0">
             <div class="strong">Casino</div>
             <div class="muted">
-              Coin flips, slots, duels and a daily lottery, all listed under <Code>/bank casino</Code>. Results are posted
-              where the command is run. The house needs a bankroll before it will take a bet.
+              Flips, slots, duels and a daily lottery, under <Code>/bank casino</Code>.
             </div>
           </div>
           <Toggle checked={draft.games.enabled} onChange={(value: boolean) => setDraft("games", "enabled", value)} aria-label="Open the casino" />
@@ -915,10 +914,7 @@ function SettingsPanel(props: { me: Me; changed: () => void }) {
                 />
               </Label>
             </div>
-            <p class="faint m-0">
-              The house keeps its reserve to pay winners. At the daily draw, whatever it won beyond that goes to the central
-              bank, which puts a tenth of what it holds into the lottery pot.
-            </p>
+            <p class="faint m-0">Winnings above the reserve go to the central bank at the daily draw.</p>
           </div>
         </Show>
 
@@ -1100,7 +1096,7 @@ function PrintPanel(props: { me: Me; changed: () => void }) {
   return (
     <Panel
       title="Print money"
-      description="Create coins for the casino's house or the central bank, or destroy some. Along with adjusting a balance, this is the only thing that changes how many coins exist."
+      description="Creates or destroys coins. The house needs a bankroll before it takes bets."
     >
       <div class="px-4 pb-4 flex flex-col gap-4 max-w-[520px]">
         <Label text="Amount" class="max-w-[112px]">
@@ -1240,7 +1236,7 @@ function ImportPanel(props: { changed: () => void }) {
   return (
     <Panel
       title="Import history"
-      description="Moved here from another Bank? Its exported history replaces the adjustments that copied balances over, so everyone's received and given totals are real again. It refuses to run if it would change what anyone holds, and it only runs once."
+      description="Bring over the history of the Bank this one replaced. Runs once, and never changes a balance."
       action={
         <Button variant="neutral" disabled={busy()} onClick={() => input.click()}>
           {busy() ? "Importing…" : "Choose export file"}
