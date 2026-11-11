@@ -651,6 +651,35 @@ function Label(props: { text: string; hint?: string; class?: string; children: J
   )
 }
 
+/** A row of number settings, with a line under it saying what they do. */
+function Numbers(props: { title?: string; note: string; children: JSX.Element }) {
+  return (
+    <div class="flex flex-col gap-2">
+      <Show when={props.title}>
+        <div class="strong">{props.title}</div>
+      </Show>
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">{props.children}</div>
+      <p class="faint m-0">{props.note}</p>
+    </div>
+  )
+}
+
+/** One number setting. `decimal` allows a fraction, for a percentage. */
+function NumberField(props: { label: string; value: number; set: (value: number) => void; decimal?: boolean }) {
+  const read = (text: string) => Number(props.decimal ? text.replace(",", ".").replace(/[^0-9.]/g, "") : text.replace(/[^0-9]/g, "")) || 0
+  return (
+    <Label text={props.label}>
+      <TextInput
+        class="w-full"
+        numeric
+        inputmode={props.decimal ? "decimal" : "numeric"}
+        value={String(props.value)}
+        onInput={(event) => props.set(read(event.currentTarget.value))}
+      />
+    </Label>
+  )
+}
+
 function Status(props: { value: { kind: "error" | "ok"; text: string } | null }) {
   return (
     <Show when={props.value}>
@@ -950,11 +979,18 @@ function SettingsPanel(props: { me: Me; changed: () => void }) {
           <div class="min-w-0">
             <div class="strong">Casino</div>
             <div class="muted">
-              Flips, slots, duels and a daily lottery, under <Code>/bank casino</Code>.
+              Flips, slots, roulette, blackjack, duels and a daily lottery, under <Code>/bank casino</Code>.
             </div>
           </div>
           <Toggle checked={draft.games.enabled} onChange={(value: boolean) => setDraft("games", "enabled", value)} aria-label="Open the casino" />
         </div>
+
+        <Show when={draft.games.enabled}>
+          <Numbers note="Winnings above the reserve go to the central bank at the daily draw.">
+            <NumberField label="Biggest bet" value={draft.games.maxBet} set={(value) => setDraft("games", "maxBet", value)} />
+            <NumberField label="House reserve" value={draft.games.reserve} set={(value) => setDraft("games", "reserve", value)} />
+          </Numbers>
+        </Show>
 
         <div class="setting">
           <div class="min-w-0">
@@ -967,90 +1003,17 @@ function SettingsPanel(props: { me: Me; changed: () => void }) {
         </div>
 
         <Show when={draft.market.enabled}>
-          <div class="flex flex-col gap-2">
-            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <Label text="Trading fee, %">
-                <TextInput
-                  class="w-full"
-                  numeric
-                  inputmode="decimal"
-                  value={String(draft.market.fee)}
-                  onInput={(event) => setDraft("market", "fee", Number(event.currentTarget.value.replace(",", ".").replace(/[^0-9.]/g, "")) || 0)}
-                />
-              </Label>
-            </div>
-            <p class="faint m-0">The fee on every trade goes to the central bank.</p>
-          </div>
+          <Numbers note="The fee on every trade goes to the central bank.">
+            <NumberField decimal label="Trading fee, %" value={draft.market.fee} set={(value) => setDraft("market", "fee", value)} />
+          </Numbers>
         </Show>
 
-        <div class="flex flex-col gap-2">
-          <div class="strong">Taxes</div>
-          <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <Label text="Gifts, %">
-                <TextInput
-                  class="w-full"
-                  numeric
-                  inputmode="decimal"
-                  value={String(draft.taxes.transfer)}
-                  onInput={(event) => setDraft("taxes", "transfer", Number(event.currentTarget.value.replace(",", ".").replace(/[^0-9.]/g, "")) || 0)}
-                />
-              </Label>
-              <Label text="Winnings, %">
-                <TextInput
-                  class="w-full"
-                  numeric
-                  inputmode="decimal"
-                  value={String(draft.taxes.winnings)}
-                  onInput={(event) => setDraft("taxes", "winnings", Number(event.currentTarget.value.replace(",", ".").replace(/[^0-9.]/g, "")) || 0)}
-                />
-              </Label>
-              <Label text="Wealth, % a week">
-                <TextInput
-                  class="w-full"
-                  numeric
-                  inputmode="decimal"
-                  value={String(draft.taxes.wealth)}
-                  onInput={(event) => setDraft("taxes", "wealth", Number(event.currentTarget.value.replace(",", ".").replace(/[^0-9.]/g, "")) || 0)}
-                />
-              </Label>
-              <Label text="Wealth above">
-                <TextInput
-                  class="w-full"
-                  numeric
-                  inputmode="numeric"
-                  value={String(draft.taxes.wealthAbove)}
-                  onInput={(event) => setDraft("taxes", "wealthAbove", Number(event.currentTarget.value.replace(/[^0-9]/g, "")) || 0)}
-                />
-              </Label>
-          </div>
-          <p class="faint m-0">All paid to the central bank. Zero is off. A taxed gift still counts in full toward what someone has received.</p>
-        </div>
-
-        <Show when={draft.games.enabled}>
-          <div class="flex flex-col gap-2">
-            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <Label text="Biggest bet">
-                <TextInput
-                  class="w-full"
-                  numeric
-                  inputmode="numeric"
-                  value={String(draft.games.maxBet)}
-                  onInput={(event) => setDraft("games", "maxBet", Number(event.currentTarget.value.replace(/[^0-9]/g, "")) || 0)}
-                />
-              </Label>
-              <Label text="House reserve">
-                <TextInput
-                  class="w-full"
-                  numeric
-                  inputmode="numeric"
-                  value={String(draft.games.reserve)}
-                  onInput={(event) => setDraft("games", "reserve", Number(event.currentTarget.value.replace(/[^0-9]/g, "")) || 0)}
-                />
-              </Label>
-            </div>
-            <p class="faint m-0">Winnings above the reserve go to the central bank at the daily draw.</p>
-          </div>
-        </Show>
+        <Numbers title="Taxes" note="All paid to the central bank. Zero is off. A taxed gift still counts in full toward what someone has received.">
+          <NumberField decimal label="Gifts, %" value={draft.taxes.transfer} set={(value) => setDraft("taxes", "transfer", value)} />
+          <NumberField decimal label="Winnings, %" value={draft.taxes.winnings} set={(value) => setDraft("taxes", "winnings", value)} />
+          <NumberField decimal label="Wealth, % a week" value={draft.taxes.wealth} set={(value) => setDraft("taxes", "wealth", value)} />
+          <NumberField label="Wealth above" value={draft.taxes.wealthAbove} set={(value) => setDraft("taxes", "wealthAbove", value)} />
+        </Numbers>
 
         <div class="flex flex-col gap-2">
           <div class="flex items-baseline justify-between gap-3">
@@ -1217,26 +1180,26 @@ function AdjustPanel(props: { me: Me; changed: () => void }) {
 function PrintPanel(props: { me: Me; changed: () => void }) {
   const [amount, setAmount] = createSignal("")
   const [status, setStatus] = createSignal<{ kind: "error" | "ok"; text: string } | null>(null)
-  const pay = async () => {
+  /** Does one thing with the amount typed and says how it went. */
+  const attempt = async (act: (amount: number) => Promise<string>) => {
     try {
-      const result = await api.stimulus(Number(amount()))
-      setStatus({ kind: "ok", text: `Paid ${currency(props.me.config, result.each)} each to ${result.people} people.` })
+      setStatus({ kind: "ok", text: await act(Number(amount())) })
       setAmount("")
       props.changed()
     } catch (error) {
       setStatus({ kind: "error", text: (error as Error).message })
     }
   }
-  const run = async (target: string, name: string, sign: 1 | -1) => {
-    try {
-      await api.adjust(target, sign * Number(amount()), "monetary policy")
-      setStatus({ kind: "ok", text: `${sign > 0 ? "Printed" : "Destroyed"} ${currency(props.me.config, Number(amount()))} ${sign > 0 ? "for" : "from"} ${name}.` })
-      setAmount("")
-      props.changed()
-    } catch (error) {
-      setStatus({ kind: "error", text: (error as Error).message })
-    }
-  }
+  const pay = () =>
+    attempt(async (amount) => {
+      const result = await api.stimulus(amount)
+      return `Paid ${currency(props.me.config, result.each)} each to ${result.people} people.`
+    })
+  const run = (target: string, name: string, sign: 1 | -1) =>
+    attempt(async (amount) => {
+      await api.adjust(target, sign * amount, "monetary policy")
+      return `${sign > 0 ? "Printed" : "Destroyed"} ${currency(props.me.config, amount)} ${sign > 0 ? "for" : "from"} ${name}.`
+    })
   return (
     <Panel
       title="Monetary policy"

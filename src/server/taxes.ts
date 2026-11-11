@@ -8,7 +8,7 @@
 // Every rate is a percentage and starts at zero. Amounts here are in cents, like the rest of the ledger.
 
 import { CENTRAL, type Config } from "../shared/types"
-import type { Ledger } from "./casino"
+import type { Ledger } from "./ledger"
 import { money } from "./money"
 
 const WEEK = 7 * 24 * 60 * 60 * 1000

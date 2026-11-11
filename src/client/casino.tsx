@@ -1,9 +1,8 @@
 // The Casino tab: what the games have done to everyone, read off the ledger.
 
-import { Avatar } from "@opencode/ui/avatar"
 import { For, Show } from "solid-js"
 import { amountText, nextDraw, type CasinoStats, type Config } from "../shared/types"
-import { Chart, date, number, Section, signed, Tile } from "./economy"
+import { Chart, date, number, Ranked, Section, signed, Tile } from "./economy"
 
 const NAMES: Record<string, string> = { flip: "Coin flip", slots: "Slots", roulette: "Roulette", blackjack: "Blackjack", lottery: "Lottery", duel: "Duels" }
 /** The next daily draw in the viewer's own time: "today 09:00" or "tomorrow 09:00". */
@@ -20,41 +19,14 @@ const localDay = (at: number) => {
 }
 const share = (part: number, whole: number) => (whole > 0 ? `${Math.round((part / whole) * 100)}%` : "–")
 
-function People(props: { title: string; note: string; people: CasinoStats["people"] }) {
-  return (
-    <section class="card overflow-hidden">
-      <h2 class="m-0 p-4 pb-2 text-[13px] leading-5 font-[inherit]">
-        <span class="strong">{props.title}</span> <span class="faint">· {props.note}</span>
-      </h2>
-      <Show when={props.people.length} fallback={<div class="px-4 pb-4 faint">Nobody yet.</div>}>
-        <For each={props.people}>
-          {(person) => (
-            <div class="row flex items-center gap-3 px-4 py-2.5">
-              <Avatar src={person.image ?? undefined} fallback={person.name} size="large" />
-              <div class="flex-1 min-w-0 flex flex-col">
-                <span class="truncate">{person.name}</span>
-                <span class="faint truncate">
-                  {person.bets} bets · won {person.wins} · worst run {person.streak}
-                </span>
-              </div>
-              <span class="num strong" classList={{ positive: person.net > 0, danger: person.net < 0 }}>
-                {person.net > 0 ? "+" : person.net < 0 ? "−" : ""}
-                {amountText(Math.abs(person.net))}
-              </span>
-            </div>
-          )}
-        </For>
-      </Show>
-    </section>
-  )
-}
+const record = (person: CasinoStats["people"][number]) => `${person.bets} bets · won ${person.wins} · worst run ${person.streak}`
 
 export function CasinoView(props: { config: Config; stats: CasinoStats | undefined }) {
   const coins = (value: number) => `${number(value)} ${Math.abs(value) === 1 ? props.config.singular : props.config.plural}`
   return (
     <Show when={props.stats} fallback={<section class="card px-4 py-8 text-center faint">Loading…</section>}>
       {(stats) => {
-        const house = () => stats().games.filter((game) => game.game === "flip" || game.game === "slots")
+        const house = () => stats().games.filter((game) => game.game !== "lottery" && game.game !== "duel")
         const staked = () => house().reduce((sum, game) => sum + game.staked, 0)
         const paid = () => house().reduce((sum, game) => sum + game.paid, 0)
         const losers = () => [...stats().people].reverse().filter((person) => person.net < 0).slice(0, 5)
@@ -88,8 +60,8 @@ export function CasinoView(props: { config: Config; stats: CasinoStats | undefin
               </Tile>
             </section>
 
-            <People title="Hall of shame" note="lost the most" people={losers()} />
-            <People title="Somehow ahead" note="won the most" people={winners()} />
+            <Ranked title="Hall of shame" note="lost the most" people={losers()} amount={(person) => person.net} detail={record} />
+            <Ranked title="Somehow ahead" note="won the most" people={winners()} amount={(person) => person.net} detail={record} />
 
             <section class="card overflow-hidden">
               <table class="chart-table">

@@ -1,5 +1,5 @@
 // Games, the lottery draw and the economy figures, as they touch the ledger. The odds and the wording live in
-// games.ts. This is kept out of workspace.ts so that upstream changes there merge without a fight.
+// games.ts, and the games with a second step (duels, blackjack) in tables.ts.
 //
 // Nothing here creates or destroys coins. A stake goes to the house or the lottery pot, a win comes back out of them,
 // and what the house wins beyond its reserve goes to the central bank, which pays part of it back into each draw.
@@ -7,16 +7,12 @@
 // Like the rest of the ledger this counts in cents, and the settings it is handed are in cents too. The economy
 // figures are the one thing that leaves here for the web app, so they go out in coins.
 
-import { CENTRAL, CENTS, HOUSE, INSTITUTIONS, MARKET, nextDraw, POT, toCents, type Config, type Economy, type EntryKind } from "../shared/types"
-import type { Env } from "./env"
-import { money as currency } from "./money"
-import { collectWealth, levy, taxed } from "./taxes"
+import { CENTRAL, CENTS, HOUSE, INSTITUTIONS, MARKET, nextDraw, POT, toCents, type Config, type Economy } from "../shared/types"
 import {
   BLACKJACK_TOP,
   brokeLine,
   draw,
   drawLine,
-  duelOpenLine,
   flip,
   FLIP_PAYS,
   flipLine,
@@ -32,47 +28,16 @@ import {
   type Rand,
   type Side,
 } from "./games"
-import { answerDuel, deal, DUEL_LASTS, duelOffer, hasHand, loud, owed, playHand, quiet, type Message } from "./tables"
+import { held, loud, quiet, tooFast, type Ledger, type Message } from "./ledger"
+import { money as currency } from "./money"
+import { answerDuel, deal, hasHand, offerDuel, owed, playHand } from "./tables"
+import { collectWealth, levy, taxed } from "./taxes"
 
-type Row = { id: string; name: string; balance: number; bot: number; gone: number }
-
-type Moved =
-  | { ok: true; id: number; from: number | null; to: number | null }
-  | { ok: false; reason: "insufficient" | "unknown"; balance: number }
-
-/** What the Workspace lends the casino: its tables, its one way of moving coins, and Slack. */
-export type Ledger = {
-  sql: SqlStorage
-  storage: DurableObjectStorage
-  env: Env
-  config(): Config
-  row(id: string): Row | null
-  ensure(ids: string[]): Promise<Map<string, Row | null>>
-  move(input: { from: string | null; to: string | null; amount: number; kind: EntryKind; note?: string | null; actor?: string | null }): Moved
-  meta<T>(key: string): T | null
-  setMeta(key: string, value: unknown): void
-  call<T = Record<string, unknown>>(method: string, params?: Record<string, unknown>): Promise<T>
-  /** Decides how the games come out. Only tests set it; everything else gets real randomness. */
-  rand?: Rand
-}
-
-const MINUTE = 60_000
-const DAY = 24 * 60 * MINUTE
-const BETS_A_MINUTE = 10
+const DAY = 24 * 60 * 60 * 1000
 /** The share of the central bank's reserves, in percent, that it adds to each lottery draw. */
 const LOTTERY_SHARE = 10
-
 const MENTION = /<@([UW][A-Z0-9]+)(?:\|[^>]*)?>/
-
-/** The next draw as Slack shows a time: in each reader's own time zone, with UTC for anything that can't. */
-function drawTime(now = Date.now()) {
-  const at = nextDraw(now)
-  return `<!date^${Math.floor(at / 1000)}^{date_short_pretty} at {time}|${new Date(at).toISOString().slice(11, 16)} UTC>`
-}
-const COMMANDS = new Set([
-  ...["flip", "slots", "slot", "spin", "roulette", "blackjack", "bj", "hit", "stand"],
-  ...["duel", "accept", "decline", "lottery", "lotto", "casino", "house"],
-])
+const AGAIN = "something went wrong, try again"
 
 export function setup(sql: SqlStorage) {
   sql.exec(`
@@ -92,17 +57,17 @@ export function setup(sql: SqlStorage) {
   }
 }
 
-function held(ledger: Ledger, id: string) {
-  return ledger.row(id)?.balance ?? 0
-}
-
 /** The draw also settles the house and collects the wealth tax, so anything at the casino makes sure one is coming. */
 export async function schedule(ledger: Ledger) {
   const next = nextDraw(Date.now())
   if ((await ledger.storage.getAlarm()) !== next) await ledger.storage.setAlarm(next)
 }
 
-// ---------- slash commands
+/** The next draw as Slack shows a time: in each reader's own time zone, with UTC for anything that can't. */
+function drawTime(now = Date.now()) {
+  const at = nextDraw(now)
+  return `<!date^${Math.floor(at / 1000)}^{date_short_pretty} at {time}|${new Date(at).toISOString().slice(11, 16)} UTC>`
+}
 
 /** The casino's part of `/bank help`: nothing at all while it's closed. */
 export function casinoHelp(config: Config) {
@@ -119,157 +84,201 @@ export function casinoHelp(config: Config) {
   ]
 }
 
-export async function play(
-  ledger: Ledger,
-  input: { sub: string; words: string[]; user: string; channel: string | null },
-): Promise<Message | null> {
-  if (!COMMANDS.has(input.sub)) return null
+// ---------- slash commands
+
+/** A casino command from someone, with the stake they typed, if they typed one. */
+type Bet = {
+  ledger: Ledger
+  config: Config
+  user: string
+  words: string[]
+  channel: string | null
+  /** The first number in what they typed, and what it comes to in cents. */
+  word: string | undefined
+  amount: number
+  rand: Rand
+  coins(cents: number): string
+}
+
+type Game = (bet: Bet) => Message | Promise<Message>
+
+/** Why a stake can't be taken, if it can't: it isn't one, it's over the limit, they don't have it, or they're going too fast. */
+async function refuse({ ledger, config, user, amount, coins }: Bet, usage: string) {
+  if (!Number.isSafeInteger(amount) || amount <= 0) return usage
+  if (amount > config.games.maxBet) return `the limit is ${coins(config.games.maxBet)} a bet. the house would like you to last longer than that.`
+  const row = (await ledger.ensure([user])).get(user)
+  if (!row || row.gone) return "only members of this workspace get to lose money here."
+  if (row.balance < amount) return brokeLine(secureRand, { balance: coins(row.balance) })
+  if (tooFast(ledger, user, ["bet", "duel"])) return "slow down. the house will still be here to take your coins in a minute."
+  return null
+}
+
+/** The house only takes a bet it could pay out in full, whatever happens, on top of the hands already being played. */
+function tooRich({ ledger, config, amount, coins }: Bet, top: number) {
+  const house = Math.max(0, held(ledger, HOUSE) - owed(ledger))
+  const most = Math.min(config.games.maxBet, Math.floor(house / (top - 1)))
+  if (amount <= most) return null
+  if (most <= 0) return "the house is broke. somebody actually broke the bank. an admin has to top it up before anyone plays."
+  return `the house only has ${coins(house)}, so the most it will take on this is ${coins(most)}. somebody's been winning.`
+}
+
+/**
+ * One bet against the house, settled on the spot: the stake goes in, the game is played, and whatever it pays comes
+ * straight back out. `top` is the most the game can pay, in stakes.
+ */
+async function wager(
+  bet: Bet,
+  game: { name: string; usage: string; top: number; play(): { pays: number; line(words: Record<string, string>): string } },
+) {
+  const problem = (await refuse(bet, game.usage)) ?? tooRich(bet, game.top)
+  if (problem) return quiet(problem)
+  const { ledger, config, user, amount, coins } = bet
+  if (!ledger.move({ from: user, to: HOUSE, amount, kind: "bet", note: game.name, actor: user }).ok) return quiet(AGAIN)
+  const result = game.play()
+  const win = amount * result.pays
+  if (win > 0) ledger.move({ from: HOUSE, to: user, amount: win, kind: "payout", note: game.name, actor: user })
+  const tax = levy(ledger, { from: user, amount: win - amount, rate: config.taxes.winnings, note: "winnings tax" })
+  return loud(result.line({ user: `<@${user}>`, amount: coins(amount), win: coins(win) }) + taxed(config, tax))
+}
+
+const flipCoin: Game = (bet) => {
+  const call: Side = bet.words.some((word) => /^t(ails)?$/i.test(word)) ? "tails" : "heads"
+  return wager(bet, {
+    name: "flip",
+    usage: "say how much: `/bank flip 10`, or `/bank flip 10 tails`",
+    top: FLIP_PAYS,
+    play() {
+      const result = flip(bet.rand, call)
+      return { pays: result.won ? FLIP_PAYS : 0, line: (words) => flipLine(secureRand, result, { ...words, call }) }
+    },
+  })
+}
+
+const slots: Game = (bet) =>
+  wager(bet, {
+    name: "slots",
+    usage: "say how much: `/bank slots 10`",
+    top: SLOT_TOP,
+    play() {
+      const result = spin(bet.rand)
+      return { pays: result.pays, line: (words) => slotLine(secureRand, result, words) }
+    },
+  })
+
+const wheel: Game = (bet) => {
+  const usage = "say how much and on what: `/bank roulette 10 red`. red, black, odd, even, or a number from 0 to 36."
+  // The first number is the stake, so a second one is the pocket.
+  const stake = bet.word === undefined ? -1 : bet.words.indexOf(bet.word)
+  const pocket = parsePocket(bet.words.find((_, index) => index !== stake))
+  if (pocket === null) return quiet(usage)
+  return wager(bet, {
+    name: "roulette",
+    usage,
+    top: roulettePays(pocket),
+    play() {
+      const result = roulette(bet.rand, pocket)
+      return { pays: result.pays, line: (words) => rouletteLine(secureRand, result, { ...words, pocket: String(pocket) }) }
+    },
+  })
+}
+
+const blackjack: Game = async (bet) => {
+  const problem = await refuse(bet, "say how much: `/bank blackjack 10`")
+  if (problem) return quiet(problem)
+  if (hasHand(bet.ledger, bet.user)) return quiet("you already have a hand on the table. `/bank hit` or `/bank stand`.")
+  const short = tooRich(bet, BLACKJACK_TOP)
+  return short ? quiet(short) : deal(bet.ledger, bet.user, bet.amount)
+}
+
+const duel: Game = async (bet) => {
+  const to = bet.words.find((word) => MENTION.test(word))?.match(MENTION)![1]
+  if (!to) return quiet("name your victim: `/bank duel @someone 10`")
+  if (to === bet.user) return quiet("you can't duel yourself. you'd lose.")
+  const problem = await refuse(bet, "say how much: `/bank duel @someone 10`")
+  if (problem) return quiet(problem)
+  const opponent = (await bet.ledger.ensure([to])).get(to)
+  if (!opponent || opponent.bot || opponent.gone) return quiet("they can't play. pick on someone who exists.")
+  return offerDuel(bet.ledger, { from: bet.user, to, amount: bet.amount })
+}
+
+const tickets = (ledger: Ledger) => ledger.sql.exec<{ n: number | null }>("select sum(count) as n from tickets").one().n ?? 0
+
+const lottery: Game = async (bet) => {
+  const { ledger, user, amount, coins } = bet
+  const mine = () => ledger.sql.exec<{ count: number }>("select count from tickets where id = ?", user).toArray()[0]?.count ?? 0
+  if (bet.word === undefined) {
+    return quiet(
+      `the pot is ${coins(held(ledger, POT))}. you hold ${mine()} of ${tickets(ledger)} tickets. one coin is one ticket: \`/bank lottery 5\`. the draw is ${drawTime()}, and every day at that time.`,
+    )
+  }
+  const problem = await refuse(bet, "say how many tickets: `/bank lottery 5`")
+  if (problem) return quiet(problem)
+  if (amount % CENTS) return quiet("a ticket is one coin, so whole coins only. nobody wins with half a ticket.")
+  const bought = amount / CENTS
+  if (!ledger.move({ from: user, to: POT, amount, kind: "bet", note: "lottery", actor: user }).ok) return quiet(AGAIN)
+  ledger.sql.exec("insert into tickets (id, count) values (?, ?) on conflict (id) do update set count = count + excluded.count", user, bought)
+  // The draw is announced wherever the last ticket was bought.
+  if (bet.channel) ledger.setMeta("lottery_channel", bet.channel)
+  return loud(
+    `${ticketLine(secureRand, {
+      user: `<@${user}>`,
+      tickets: `${bought} ${bought === 1 ? "ticket" : "tickets"}`,
+      pot: coins(held(ledger, POT)),
+      chance: `${Math.round((mine() / tickets(ledger)) * 100)}%`,
+    })} the draw is ${drawTime()}.`,
+  )
+}
+
+const books: Game = ({ ledger, config, coins }) => {
+  const sold = tickets(ledger)
+  return quiet(
+    [
+      ...casinoHelp(config).slice(0, -1),
+      `the house holds ${coins(held(ledger, HOUSE))}, the central bank ${coins(held(ledger, CENTRAL))}`,
+      `the lottery pot is ${coins(held(ledger, POT))} across ${sold} ${sold === 1 ? "ticket" : "tickets"}, drawn ${drawTime()}`,
+    ].join("\n"),
+  )
+}
+
+/** Every word the casino answers to. A new game is one more line here. */
+const GAMES = new Map<string, Game>([
+  ["flip", flipCoin],
+  ["slots", slots],
+  ["slot", slots],
+  ["spin", slots],
+  ["roulette", wheel],
+  ["blackjack", blackjack],
+  ["bj", blackjack],
+  ["hit", (bet) => playHand(bet.ledger, bet.user, "hit")],
+  ["stand", (bet) => playHand(bet.ledger, bet.user, "stand")],
+  ["duel", duel],
+  ["accept", (bet) => answerDuel(bet.ledger, bet.user, true)],
+  ["decline", (bet) => answerDuel(bet.ledger, bet.user, false)],
+  ["lottery", lottery],
+  ["lotto", lottery],
+  ["casino", books],
+  ["house", books],
+])
+
+/** Answers a casino command, or returns null when the words aren't the casino's. */
+export async function play(ledger: Ledger, input: { sub: string; words: string[]; user: string; channel: string | null }): Promise<Message | null> {
+  const game = GAMES.get(input.sub)
+  if (!game) return null
   const config = ledger.config()
   if (!config.games.enabled) return quiet(`the casino is closed. an admin can open it at <${ledger.env.PUBLIC_URL}|the bank>.`)
   await schedule(ledger)
-
-  const coins = (amount: number) => currency(config, amount)
-  const me = `<@${input.user}>`
-  const rand = ledger.rand ?? secureRand
   const word = input.words.find((word) => /^\d+(\.\d{1,2})?$/.test(word))
-  const amount = word ? (toCents(word) ?? 0) : 0
-
-  /** Checks a stake against the limit, the player's balance and how fast they're betting. */
-  const refuse = async (usage: string) => {
-    if (!Number.isSafeInteger(amount) || amount <= 0) return usage
-    if (amount > config.games.maxBet) return `the limit is ${coins(config.games.maxBet)} a bet. the house would like you to last longer than that.`
-    const row = (await ledger.ensure([input.user])).get(input.user)
-    if (!row || row.gone) return "only members of this workspace get to lose money here."
-    if (row.balance < amount) return brokeLine(secureRand, { balance: coins(row.balance) })
-    const recent = ledger.sql
-      .exec<{ n: number }>(
-        "select count(*) as n from entries where actor = ? and kind in ('bet', 'duel') and at > ?",
-        input.user,
-        Date.now() - MINUTE,
-      )
-      .one().n
-    if (recent >= BETS_A_MINUTE) return "slow down. the house will still be here to take your coins in a minute."
-    return null
-  }
-
-  /** The house only takes a bet it could pay out in full, whatever happens, on top of the hands already being played. */
-  const tooRich = (top: number) => {
-    const house = Math.max(0, held(ledger, HOUSE) - owed(ledger))
-    const most = Math.min(config.games.maxBet, Math.floor(house / (top - 1)))
-    if (amount <= most) return null
-    if (most <= 0) return "the house is broke. somebody actually broke the bank. an admin has to top it up before anyone plays."
-    return `the house only has ${coins(house)}, so the most it will take on this is ${coins(most)}. somebody's been winning.`
-  }
-
-  if (input.sub === "casino" || input.sub === "house") {
-    const tickets = ledger.sql.exec<{ n: number | null }>("select sum(count) as n from tickets").one().n ?? 0
-    return quiet(
-      [
-        ...casinoHelp(config).slice(0, -1),
-        `the house holds ${coins(held(ledger, HOUSE))}, the central bank ${coins(held(ledger, CENTRAL))}`,
-        `the lottery pot is ${coins(held(ledger, POT))} across ${tickets} ${tickets === 1 ? "ticket" : "tickets"}, drawn ${drawTime()}`,
-      ].join("\n"),
-    )
-  }
-
-  if (input.sub === "flip") {
-    const problem = (await refuse("say how much: `/bank flip 10`, or `/bank flip 10 tails`")) ?? tooRich(FLIP_PAYS)
-    if (problem) return quiet(problem)
-    const call: Side = input.words.some((word) => /^t(ails)?$/i.test(word)) ? "tails" : "heads"
-    const staked = ledger.move({ from: input.user, to: HOUSE, amount, kind: "bet", note: "flip", actor: input.user })
-    if (!staked.ok) return quiet("something went wrong, try again")
-    const result = flip(rand, call)
-    if (result.won) ledger.move({ from: HOUSE, to: input.user, amount: amount * FLIP_PAYS, kind: "payout", note: "flip", actor: input.user })
-    const tax = result.won ? levy(ledger, { from: input.user, amount: amount * (FLIP_PAYS - 1), rate: config.taxes.winnings, note: "winnings tax" }) : 0
-    return loud(flipLine(secureRand, result, { user: me, call, amount: coins(amount) }) + taxed(config, tax))
-  }
-
-  if (input.sub === "slots" || input.sub === "slot" || input.sub === "spin") {
-    const problem = (await refuse("say how much: `/bank slots 10`")) ?? tooRich(SLOT_TOP)
-    if (problem) return quiet(problem)
-    const staked = ledger.move({ from: input.user, to: HOUSE, amount, kind: "bet", note: "slots", actor: input.user })
-    if (!staked.ok) return quiet("something went wrong, try again")
-    const result = spin(rand)
-    const win = amount * result.pays
-    if (win > 0) ledger.move({ from: HOUSE, to: input.user, amount: win, kind: "payout", note: "slots", actor: input.user })
-    const tax = levy(ledger, { from: input.user, amount: win - amount, rate: config.taxes.winnings, note: "winnings tax" })
-    return loud(slotLine(secureRand, result, { user: me, amount: coins(amount), win: coins(win) }) + taxed(config, tax))
-  }
-
-  if (input.sub === "roulette") {
-    const usage = "say how much and on what: `/bank roulette 10 red`. red, black, odd, even, or a number from 0 to 36."
-    // The first number is the stake, so a second one is the pocket.
-    const stake = word ? input.words.indexOf(word) : -1
-    const pocket = parsePocket(input.words.find((_, index) => index !== stake))
-    const problem = (await refuse(usage)) ?? (pocket === null ? usage : tooRich(roulettePays(pocket)))
-    if (problem || pocket === null) return quiet(problem ?? usage)
-    const staked = ledger.move({ from: input.user, to: HOUSE, amount, kind: "bet", note: "roulette", actor: input.user })
-    if (!staked.ok) return quiet("something went wrong, try again")
-    const result = roulette(rand, pocket)
-    const win = amount * result.pays
-    if (win > 0) ledger.move({ from: HOUSE, to: input.user, amount: win, kind: "payout", note: "roulette", actor: input.user })
-    const tax = levy(ledger, { from: input.user, amount: win - amount, rate: config.taxes.winnings, note: "winnings tax" })
-    return loud(rouletteLine(secureRand, result, { user: me, amount: coins(amount), win: coins(win), pocket: String(pocket) }) + taxed(config, tax))
-  }
-
-  if (input.sub === "blackjack" || input.sub === "bj") {
-    const problem = await refuse("say how much: `/bank blackjack 10`")
-    if (problem) return quiet(problem)
-    if (hasHand(ledger, input.user)) return quiet("you already have a hand on the table. `/bank hit` or `/bank stand`.")
-    const short = tooRich(BLACKJACK_TOP)
-    if (short) return quiet(short)
-    const dealt = deal(ledger, input.user, amount)
-    return dealt
-  }
-
-  if (input.sub === "hit" || input.sub === "stand") return playHand(ledger, input.user, input.sub)
-
-  if (input.sub === "duel") {
-    const to = input.words.find((word) => MENTION.test(word))?.match(MENTION)![1]
-    if (!to) return quiet("name your victim: `/bank duel @someone 10`")
-    if (to === input.user) return quiet("you can't duel yourself. you'd lose.")
-    const problem = await refuse("say how much: `/bank duel @someone 10`")
-    if (problem) return quiet(problem)
-    const opponent = (await ledger.ensure([to])).get(to)
-    if (!opponent || opponent.bot || opponent.gone) return quiet("they can't play. pick on someone who exists.")
-    ledger.sql.exec("delete from duels where (from_id = ?1 and to_id = ?2) or at < ?3", input.user, to, Date.now() - DUEL_LASTS)
-    ledger.sql.exec("insert into duels (from_id, to_id, amount, at) values (?, ?, ?, ?)", input.user, to, amount, Date.now())
-    const id = ledger.sql.exec<{ id: number }>("select max(id) as id from duels where from_id = ? and to_id = ?", input.user, to).one().id
-    return duelOffer(loud(duelOpenLine(secureRand, { from: me, to: `<@${to}>`, amount: coins(amount) })), id)
-  }
-
-  if (input.sub === "accept" || input.sub === "decline") return answerDuel(ledger, input.user, input.sub === "accept")
-
-  // lottery
-  const count = (id: string) =>
-    ledger.sql.exec<{ count: number }>("select count from tickets where id = ?", id).toArray()[0]?.count ?? 0
-  const total = () => ledger.sql.exec<{ n: number | null }>("select sum(count) as n from tickets").one().n ?? 0
-  if (!word) {
-    return quiet(
-      `the pot is ${coins(held(ledger, POT))}. you hold ${count(input.user)} of ${total()} tickets. one coin is one ticket: \`/bank lottery 5\`. the draw is ${drawTime()}, and every day at that time.`,
-    )
-  }
-  const problem = await refuse("say how many tickets: `/bank lottery 5`")
-  if (problem) return quiet(problem)
-  if (amount % CENTS) return quiet("a ticket is one coin, so whole coins only. nobody wins with half a ticket.")
-  const tickets = amount / CENTS
-  const bought = ledger.move({ from: input.user, to: POT, amount, kind: "bet", note: "lottery", actor: input.user })
-  if (!bought.ok) return quiet("something went wrong, try again")
-  ledger.sql.exec(
-    "insert into tickets (id, count) values (?, ?) on conflict (id) do update set count = count + excluded.count",
-    input.user,
-    tickets,
-  )
-  // The draw is announced wherever the last ticket was bought.
-  if (input.channel) ledger.setMeta("lottery_channel", input.channel)
-  return loud(
-    `${ticketLine(secureRand, {
-      user: me,
-      tickets: `${tickets} ${tickets === 1 ? "ticket" : "tickets"}`,
-      pot: coins(held(ledger, POT)),
-      chance: `${Math.round((count(input.user) / total()) * 100)}%`,
-    })} the draw is ${drawTime()}.`,
-  )
+  return game({
+    ledger,
+    config,
+    user: input.user,
+    words: input.words,
+    channel: input.channel,
+    word,
+    amount: word ? (toCents(word) ?? 0) : 0,
+    rand: ledger.rand ?? secureRand,
+    coins: (cents) => currency(config, cents),
+  })
 }
 
 /** How a game entry reads in `/bank history`, or null when the entry isn't one. */

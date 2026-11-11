@@ -12,11 +12,10 @@
 // morning's news.
 
 import { CENTRAL, CENTS, MARKET, toCents, type Config, type MarketStats, type Portfolio } from "../shared/types"
-import type { Ledger } from "./casino"
 import { brokeLine, say, secureRand, type Line } from "./games"
 import { money } from "./money"
 import { people } from "./stats"
-import { loud, quiet, type Message } from "./tables"
+import { loud, quiet, tooFast, type Ledger, type Message } from "./ledger"
 import { levy, taxed as taxNote } from "./taxes"
 
 export type Quote = {
@@ -40,8 +39,6 @@ const MINUTE = 60_000
 const FRESH = MINUTE
 /** A price older than this is not one to trade on. */
 const LIVE = 10 * MINUTE
-const TRADES_A_MINUTE = 10
-const COMMANDS = new Set(["price", "quote", "buy", "sell", "portfolio", "stocks", "market"])
 
 export function setupMarket(sql: SqlStorage) {
   sql.exec(`
@@ -158,121 +155,169 @@ export function marketHelp(config: Config) {
   ]
 }
 
-export async function market(ledger: Ledger, input: { sub: string; words: string[]; user: string }): Promise<Message | null> {
-  if (!COMMANDS.has(input.sub)) return null
-  const config = ledger.config()
-  const coins = (cents: number) => money(config, cents)
-  const me = `<@${input.user}>`
-  const word = input.words.find((word) => AMOUNT.test(word))
-  const everything = input.words.some((word) => /^(all|everything)$/i.test(word))
-  const named = input.words.find((word) => !AMOUNT.test(word) && !/^(all|everything|of|in|into|for)$/i.test(word))
-  const clean = (named ?? "").toUpperCase().replace(/[^A-Z0-9.\-=^]/g, "").slice(0, 15)
+/** What someone asked of the market: the symbol they named and the amount they typed, if any. */
+type Ask = {
+  ledger: Ledger
+  config: Config
+  user: string
+  named: string | undefined
+  /** The amount in cents, or null for none typed. `everything` is "all". */
+  amount: number | null
+  everything: boolean
+  coins(cents: number): string
+}
 
-  if (input.sub === "price" || input.sub === "quote") {
-    if (!named) return quiet("which one? `/bank price ERIC-B.ST`, `/bank price AAPL`, `/bank price BTC-USD`")
-    const found = await quote(ledger, named)
-    if (!found) return quiet(`no price for \`${clean}\`. symbols are Yahoo Finance's: \`ERIC-B.ST\`, \`AAPL\`, \`BTC-USD\`.`)
-    return quiet(
-      `*${found.symbol}* · ${found.name} · *${priced(found)}* · ${found.exchange} · ${found.open ? "market open" : "market closed"} · last traded ${age(found.at)}`,
-    )
-  }
+type Desk = (ask: Ask) => Message | Promise<Message>
 
-  if (!config.market.enabled) return quiet(`the stock market is closed. an admin can open it at <${ledger.env.PUBLIC_URL}|the bank>.`)
+const noPrice = (named: string) =>
+  quiet(`no price for \`${named.toUpperCase().replace(/[^A-Z0-9.\-=^]/g, "").slice(0, 15)}\`. symbols are Yahoo Finance's: \`ERIC-B.ST\`, \`AAPL\`, \`BTC-USD\`.`)
 
-  const positions = () => ledger.sql.exec<Held>("select symbol, units, cost from positions where user_id = ? order by symbol", input.user).toArray()
+type Valued = Held & { user_id: string; found: Quote | null; worth: number | null }
 
-  if (input.sub === "portfolio" || input.sub === "stocks" || input.sub === "market") {
-    const held = positions()
-    if (!held.length) {
-      return quiet(
-        `you own nothing. \`/bank buy ERIC-B.ST 20\` puts 20 coins into Ericsson, \`/bank sell ERIC-B.ST all\` takes them out at today's price. each trade costs ${config.market.fee}%.`,
-      )
-    }
-    let [cost, value] = [0, 0]
-    const lines = await Promise.all(
-      held.map(async (position) => {
-        const found = await quote(ledger, position.symbol)
-        const worth = found ? Math.floor(position.units * found.price) : position.cost
-        cost += position.cost
-        value += worth
-        return found
-          ? `*${position.symbol}* · ${coins(worth)} · ${percent(worth / position.cost - 1)} on ${coins(position.cost)}${live(found) ? "" : " · closed"}`
-          : `*${position.symbol}* · ${coins(position.cost)} put in · no price right now`
-      }),
-    )
-    return quiet(`*your portfolio* · ${coins(value)} · ${percent(value / cost - 1)}\n${lines.join("\n")}`)
-  }
+/** What one person holds, or everyone, with today's quote and what it comes to. Each symbol is asked for once. */
+async function valued(ledger: Ledger, user: string | null = null): Promise<Valued[]> {
+  const held = ledger.sql
+    .exec<Held & { user_id: string }>("select user_id, symbol, units, cost from positions where ?1 is null or user_id = ?1 order by symbol", user)
+    .toArray()
+  const quotes = new Map(await Promise.all([...new Set(held.map((position) => position.symbol))].map(async (symbol) => [symbol, await quote(ledger, symbol)] as const)))
+  return held.map((position) => {
+    const found = quotes.get(position.symbol) ?? null
+    return { ...position, found, worth: found ? Math.floor(position.units * found.price) : null }
+  })
+}
 
-  // buy and sell
-  const usage = input.sub === "buy" ? "`/bank buy ERIC-B.ST 20`" : "`/bank sell ERIC-B.ST 20`, or `all`"
-  if (!named) return quiet(`say what and how much: ${usage}`)
-  const recent = ledger.sql
-    .exec<{ n: number }>("select count(*) as n from entries where actor = ? and kind in ('buy', 'sell') and at > ?", input.user, Date.now() - MINUTE)
-    .one().n
-  if (recent >= TRADES_A_MINUTE) return quiet("slow down. this is a stock market, not a slot machine. that's the other command.")
+const price: Desk = async ({ ledger, named }) => {
+  if (!named) return quiet("which one? `/bank price ERIC-B.ST`, `/bank price AAPL`, `/bank price BTC-USD`")
   const found = await quote(ledger, named)
-  if (!found) return quiet(`no price for \`${clean}\`. symbols are Yahoo Finance's: \`ERIC-B.ST\`, \`AAPL\`, \`BTC-USD\`.`)
+  if (!found) return noPrice(named)
+  return quiet(
+    `*${found.symbol}* · ${found.name} · *${priced(found)}* · ${found.exchange} · ${found.open ? "market open" : "market closed"} · last traded ${age(found.at)}`,
+  )
+}
+
+const holdings: Desk = async ({ ledger, config, user, coins }) => {
+  const held = await valued(ledger, user)
+  if (!held.length) {
+    return quiet(
+      `you own nothing. \`/bank buy ERIC-B.ST 20\` puts 20 coins into Ericsson, \`/bank sell ERIC-B.ST all\` takes them out at today's price. each trade costs ${config.market.fee}%.`,
+    )
+  }
+  const cost = held.reduce((sum, position) => sum + position.cost, 0)
+  const value = held.reduce((sum, position) => sum + (position.worth ?? position.cost), 0)
+  const lines = held.map((position) =>
+    position.found && position.worth !== null
+      ? `*${position.symbol}* · ${coins(position.worth)} · ${percent(position.worth / position.cost - 1)} on ${coins(position.cost)}${live(position.found) ? "" : " · closed"}`
+      : `*${position.symbol}* · ${coins(position.cost)} put in · no price right now`,
+  )
+  return quiet(`*your portfolio* · ${coins(value)} · ${percent(value / cost - 1)}\n${lines.join("\n")}`)
+}
+
+/** A purchase or a sale. Both need a symbol, a steady pace and a live price before any coins move. */
+async function trade({ ledger, user, named }: Ask, usage: string, settle: (found: Quote) => Message | Promise<Message>) {
+  if (!named) return quiet(`say what and how much: ${usage}`)
+  if (tooFast(ledger, user, ["buy", "sell"])) return quiet("slow down. this is a stock market, not a slot machine. that's the other command.")
+  const found = await quote(ledger, named)
+  if (!found) return noPrice(named)
   if (!live(found)) {
     return quiet(
       `${found.symbol} isn't trading right now: ${found.open ? `its last trade was ${age(found.at)}` : `${found.exchange || "its exchange"} is closed`}. trades need a live price, or you'd all be buying yesterday's news.`,
     )
   }
-  const fee = (cents: number) => Math.min(cents, Math.round((cents * config.market.fee) / 100))
+  return settle(found)
+}
 
-  if (input.sub === "buy") {
-    const amount = word ? (toCents(word) ?? 0) : 0
-    if (amount < CENTS) return quiet(`the smallest trade is ${coins(CENTS)}: ${usage}`)
-    const row = (await ledger.ensure([input.user])).get(input.user)
+const fee = (config: Config, cents: number) => Math.min(cents, Math.round((cents * config.market.fee) / 100))
+
+const BUY = "`/bank buy ERIC-B.ST 20`"
+const buy: Desk = (ask) =>
+  trade(ask, BUY, async (found) => {
+    const { ledger, config, user, coins } = ask
+    const amount = ask.amount ?? 0
+    if (amount < CENTS) return quiet(`the smallest trade is ${coins(CENTS)}: ${BUY}`)
+    const row = (await ledger.ensure([user])).get(user)
     if (!row || row.gone) return quiet("only members of this workspace get to lose money here.")
     if (row.balance < amount) return quiet(brokeLine(secureRand, { balance: coins(row.balance) }))
-    const taxed = fee(amount)
+    const taxed = fee(config, amount)
     const invested = amount - taxed
-    const paid = ledger.move({ from: input.user, to: MARKET, amount: invested, kind: "buy", note: found.symbol, actor: input.user })
-    if (!paid.ok) return quiet("something went wrong, try again")
-    if (taxed > 0) ledger.move({ from: input.user, to: CENTRAL, amount: taxed, kind: "tax", note: "trading fee", actor: input.user })
+    if (!ledger.move({ from: user, to: MARKET, amount: invested, kind: "buy", note: found.symbol, actor: user }).ok) return quiet("something went wrong, try again")
+    if (taxed > 0) ledger.move({ from: user, to: CENTRAL, amount: taxed, kind: "tax", note: "trading fee", actor: user })
     ledger.sql.exec(
       `insert into positions (user_id, symbol, units, cost) values (?, ?, ?, ?)
         on conflict (user_id, symbol) do update set units = units + excluded.units, cost = cost + excluded.cost`,
-      input.user,
+      user,
       found.symbol,
       invested / found.price,
       invested,
     )
-    return loud(`:chart_with_upwards_trend: ${say(secureRand, BOUGHT, { user: me, amount: coins(amount), symbol: `*${found.symbol}*`, name: found.name, price: priced(found) })}`)
-  }
+    return loud(`:chart_with_upwards_trend: ${say(secureRand, BOUGHT, { user: `<@${user}>`, amount: coins(amount), symbol: `*${found.symbol}*`, name: found.name, price: priced(found) })}`)
+  })
 
-  const position = positions().find((held) => held.symbol === found.symbol)
-  if (!position) return quiet(`you don't own any ${found.symbol}. \`/bank portfolio\` shows what you do own.`)
-  const worth = Math.floor(position.units * found.price)
-  const asked = everything || !word ? worth : (toCents(word) ?? 0)
-  if (asked <= 0) return quiet(`say how much: ${usage}`)
-  // Asking for more than it's worth, or leaving less than a coin behind, sells the lot.
-  const all = asked >= worth || worth - asked < CENTS
-  const gross = all ? worth : asked
-  const share = all ? 1 : gross / worth
-  const basis = all ? position.cost : Math.round(position.cost * share)
-  const taxed = fee(gross)
+const SELL = "`/bank sell ERIC-B.ST 20`, or `all`"
+const sell: Desk = (ask) =>
+  trade(ask, SELL, (found) => {
+    const { ledger, config, user, coins } = ask
+    const position = ledger.sql.exec<Held>("select symbol, units, cost from positions where user_id = ? and symbol = ?", user, found.symbol).toArray()[0]
+    if (!position) return quiet(`you don't own any ${found.symbol}. \`/bank portfolio\` shows what you do own.`)
+    const worth = Math.floor(position.units * found.price)
+    const asked = ask.everything || ask.amount === null ? worth : ask.amount
+    if (asked <= 0) return quiet(`say how much: ${SELL}`)
+    // Asking for more than it's worth, or leaving less than a coin behind, sells the lot.
+    const all = asked >= worth || worth - asked < CENTS
+    const gross = all ? worth : asked
+    const share = all ? 1 : gross / worth
+    const basis = all ? position.cost : Math.round(position.cost * share)
+    const taxed = fee(config, gross)
 
-  // The market pays what the position is worth today. What it doesn't hold, it prints.
-  const short = gross - (ledger.row(MARKET)?.balance ?? 0)
-  if (short > 0) ledger.move({ from: null, to: MARKET, amount: short, kind: "print", note: found.symbol, actor: input.user })
-  if (gross - taxed > 0) ledger.move({ from: MARKET, to: input.user, amount: gross - taxed, kind: "sell", note: found.symbol, actor: input.user })
-  if (taxed > 0) ledger.move({ from: MARKET, to: CENTRAL, amount: taxed, kind: "tax", note: "trading fee", actor: input.user })
-  if (all) ledger.sql.exec("delete from positions where user_id = ? and symbol = ?", input.user, found.symbol)
-  else ledger.sql.exec("update positions set units = units * ?, cost = cost - ? where user_id = ? and symbol = ?", 1 - share, basis, input.user, found.symbol)
+    // The market pays what the position is worth today. What it doesn't hold, it prints.
+    const short = gross - (ledger.row(MARKET)?.balance ?? 0)
+    if (short > 0) ledger.move({ from: null, to: MARKET, amount: short, kind: "print", note: found.symbol, actor: user })
+    if (gross - taxed > 0) ledger.move({ from: MARKET, to: user, amount: gross - taxed, kind: "sell", note: found.symbol, actor: user })
+    if (taxed > 0) ledger.move({ from: MARKET, to: CENTRAL, amount: taxed, kind: "tax", note: "trading fee", actor: user })
+    if (all) ledger.sql.exec("delete from positions where user_id = ? and symbol = ?", user, found.symbol)
+    else ledger.sql.exec("update positions set units = units * ?, cost = cost - ? where user_id = ? and symbol = ?", 1 - share, basis, user, found.symbol)
 
-  const profit = gross - basis
-  const tax = levy(ledger, { from: input.user, amount: profit, rate: config.taxes.winnings, note: "gains tax" })
-  const lines = profit > 0 ? SOLD_UP : profit < 0 ? SOLD_DOWN : SOLD_FLAT
-  return loud(
-    `:chart_with_${profit < 0 ? "downwards" : "upwards"}_trend: ${say(secureRand, lines, {
-      user: me,
-      amount: coins(gross - taxed),
-      symbol: `*${found.symbol}*`,
-      change: percent(basis > 0 ? gross / basis - 1 : 0),
-      profit: coins(Math.abs(profit)),
-    })}${taxNote(config, tax)}`,
-  )
+    const profit = gross - basis
+    const tax = levy(ledger, { from: user, amount: profit, rate: config.taxes.winnings, note: "gains tax" })
+    const lines = profit > 0 ? SOLD_UP : profit < 0 ? SOLD_DOWN : SOLD_FLAT
+    return loud(
+      `:chart_with_${profit < 0 ? "downwards" : "upwards"}_trend: ${say(secureRand, lines, {
+        user: `<@${user}>`,
+        amount: coins(gross - taxed),
+        symbol: `*${found.symbol}*`,
+        change: percent(basis > 0 ? gross / basis - 1 : 0),
+        profit: coins(Math.abs(profit)),
+      })}${taxNote(config, tax)}`,
+    )
+  })
+
+/** Every word the market answers to. */
+const DESKS = new Map<string, Desk>([
+  ["price", price],
+  ["quote", price],
+  ["buy", buy],
+  ["sell", sell],
+  ["portfolio", holdings],
+  ["stocks", holdings],
+  ["market", holdings],
+])
+
+/** Answers a market command, or returns null when the words aren't the market's. */
+export async function market(ledger: Ledger, input: { sub: string; words: string[]; user: string }): Promise<Message | null> {
+  const desk = DESKS.get(input.sub)
+  if (!desk) return null
+  const config = ledger.config()
+  // A price can be looked up with the market closed. Nothing else can be done.
+  if (desk !== price && !config.market.enabled) return quiet(`the stock market is closed. an admin can open it at <${ledger.env.PUBLIC_URL}|the bank>.`)
+  const word = input.words.find((word) => AMOUNT.test(word))
+  return desk({
+    ledger,
+    config,
+    user: input.user,
+    named: input.words.find((word) => !AMOUNT.test(word) && !/^(all|everything|of|in|into|for)$/i.test(word)),
+    amount: word ? (toCents(word) ?? 0) : null,
+    everything: input.words.some((word) => /^(all|everything)$/i.test(word)),
+    coins: (cents) => money(config, cents),
+  })
 }
 
 /** How a market entry reads in `/bank history`, or null when the entry isn't one. */
@@ -286,22 +331,16 @@ export function tradeLine(row: { kind: string; from_id: string | null; note: str
 /** What someone holds, valued now, in coins for the web app. */
 export async function portfolio(ledger: Ledger, user: string): Promise<Portfolio> {
   const config = ledger.config()
-  const held = ledger.sql.exec<Held>("select symbol, units, cost from positions where user_id = ? order by symbol", user).toArray()
   return {
     enabled: config.market.enabled,
     fee: config.market.fee,
-    positions: await Promise.all(
-      held.map(async (position) => {
-        const found = await quote(ledger, position.symbol)
-        return {
-          symbol: position.symbol,
-          name: found?.name ?? position.symbol,
-          cost: position.cost / CENTS,
-          value: found ? Math.floor(position.units * found.price) / CENTS : null,
-          live: found ? live(found) : false,
-        }
-      }),
-    ),
+    positions: (await valued(ledger, user)).map((position) => ({
+      symbol: position.symbol,
+      name: position.found?.name ?? position.symbol,
+      cost: position.cost / CENTS,
+      value: position.worth === null ? null : position.worth / CENTS,
+      live: position.found ? live(position.found) : false,
+    })),
   }
 }
 
@@ -309,13 +348,7 @@ export async function portfolio(ledger: Ledger, user: string): Promise<Portfolio
 export async function marketStats(ledger: Ledger): Promise<MarketStats> {
   const coins = (cents: number) => cents / CENTS
   const who = people(ledger)
-  const held = ledger.sql.exec<Held & { user_id: string }>("select user_id, symbol, units, cost from positions").toArray()
-  const quotes = new Map(await Promise.all([...new Set(held.map((position) => position.symbol))].map(async (symbol) => [symbol, await quote(ledger, symbol)] as const)))
-  const worth = (position: Held) => {
-    const found = quotes.get(position.symbol)
-    return found ? Math.floor(position.units * found.price) : null
-  }
-
+  const held = await valued(ledger)
   const flows = ledger.sql
     .exec<{ user: string; bought: number; sold: number; trades: number }>(
       `select case when kind = 'buy' then from_id else to_id end as user,
@@ -334,27 +367,21 @@ export async function marketStats(ledger: Ledger): Promise<MarketStats> {
   )
   const investors = flows
     .map((flow) => {
-      const value = held.filter((position) => position.user_id === flow.user).reduce((sum, position) => sum + (worth(position) ?? position.cost), 0)
-      return {
-        ...who(flow.user),
-        result: coins(flow.sold + value - flow.bought - (paid.get(flow.user) ?? 0)),
-        value: coins(value),
-        trades: flow.trades,
-      }
+      const value = held.filter((position) => position.user_id === flow.user).reduce((sum, position) => sum + (position.worth ?? position.cost), 0)
+      return { ...who(flow.user), result: coins(flow.sold + value - flow.bought - (paid.get(flow.user) ?? 0)), value: coins(value), trades: flow.trades }
     })
     .sort((a, b) => b.result - a.result || a.name.localeCompare(b.name))
 
   const bySymbol = new Map<string, { symbol: string; name: string; holders: number; cost: number; value: number | null }>()
   for (const position of held) {
-    const row = bySymbol.get(position.symbol) ?? { symbol: position.symbol, name: quotes.get(position.symbol)?.name ?? position.symbol, holders: 0, cost: 0, value: 0 }
-    const value = worth(position)
+    const row = bySymbol.get(position.symbol) ?? { symbol: position.symbol, name: position.found?.name ?? position.symbol, holders: 0, cost: 0, value: 0 }
     row.holders++
     row.cost += position.cost
-    row.value = value === null || row.value === null ? null : row.value + value
+    row.value = position.worth === null || row.value === null ? null : row.value + position.worth
     bySymbol.set(position.symbol, row)
   }
-  const total = (kind: string, note?: string) =>
-    ledger.sql.exec<{ n: number | null }>(`select sum(amount) as n from entries where kind = ?${note ? " and note = ?" : ""}`, ...(note ? [kind, note] : [kind])).one().n ?? 0
+  const total = (kind: string, note: string | null = null) =>
+    ledger.sql.exec<{ n: number | null }>("select sum(amount) as n from entries where kind = ?1 and (?2 is null or note = ?2)", kind, note).one().n ?? 0
   return {
     holds: coins(ledger.row(MARKET)?.balance ?? 0),
     printed: coins(total("print")),

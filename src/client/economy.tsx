@@ -1,7 +1,8 @@
 // The Economy tab: how many coins exist, where they sit, and how much they move.
 
+import { Avatar } from "@opencode/ui/avatar"
 import { createMemo, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js"
-import type { Config, Economy } from "../shared/types"
+import { amountText, type Config, type Economy } from "../shared/types"
 
 export const number = (value: number) => value.toLocaleString("en-US")
 export const signed = (value: number) => `${value > 0 ? "+" : value < 0 ? "−" : ""}${number(Math.abs(value))}`
@@ -148,6 +149,38 @@ export function Section(props: { title: string; note: string; children: JSX.Elem
         <span class="strong">{props.title}</span> <span class="faint">· {props.note}</span>
       </h2>
       <div class="px-2 pb-3">{props.children}</div>
+    </section>
+  )
+}
+
+/** A short list of people with a figure each, green when it's a gain and red when it's a loss. */
+export function Ranked<T extends { name: string; image: string | null }>(props: {
+  title: string
+  note: string
+  people: T[]
+  amount: (person: T) => number
+  detail: (person: T) => string
+}) {
+  return (
+    <section class="card overflow-hidden">
+      <h2 class="m-0 p-4 pb-2 text-[13px] leading-5 font-[inherit]">
+        <span class="strong">{props.title}</span> <span class="faint">· {props.note}</span>
+      </h2>
+      <For each={props.people} fallback={<div class="px-4 pb-4 faint">Nobody yet.</div>}>
+        {(person) => (
+          <div class="row flex items-center gap-3 px-4 py-2.5">
+            <Avatar src={person.image ?? undefined} fallback={person.name} size="large" />
+            <div class="flex-1 min-w-0 flex flex-col">
+              <span class="truncate">{person.name}</span>
+              <span class="faint truncate">{props.detail(person)}</span>
+            </div>
+            <span class="num strong" classList={{ positive: props.amount(person) > 0, danger: props.amount(person) < 0 }}>
+              {props.amount(person) > 0 ? "+" : props.amount(person) < 0 ? "−" : ""}
+              {amountText(Math.abs(props.amount(person)))}
+            </span>
+          </div>
+        )}
+      </For>
     </section>
   )
 }

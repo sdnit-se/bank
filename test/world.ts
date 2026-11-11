@@ -2,7 +2,8 @@
 // moving coins. It counts in cents, as the real one does. The helpers take and give coins so tests read naturally.
 import { Database } from "bun:sqlite"
 import { afterEach, beforeEach } from "bun:test"
-import { setup, type Ledger } from "../src/server/casino"
+import { setup } from "../src/server/casino"
+import type { Ledger } from "../src/server/ledger"
 import { setupMarket } from "../src/server/market"
 import { inCents } from "../src/server/money"
 import { CENTS, defaultConfig, type Config } from "../src/shared/types"

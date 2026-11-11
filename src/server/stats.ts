@@ -2,7 +2,7 @@
 // is a `bet` entry, a win is the `payout` entry written right after it, and a duel is one `duel` entry.
 
 import { CENTS, HOUSE, POT, type CasinoStats, type Gambler, type Sources } from "../shared/types"
-import type { Ledger } from "./casino"
+import type { Ledger } from "./ledger"
 
 const HOUR = 60 * 60 * 1000
 const DAY = 24 * HOUR

@@ -3,7 +3,8 @@
 import { expect, test } from "bun:test"
 import { play, settle } from "../src/server/casino"
 import type { Rand } from "../src/server/games"
-import { interact, type Message } from "../src/server/tables"
+import type { Message } from "../src/server/ledger"
+import { interact } from "../src/server/tables"
 import { CENTRAL, CENTS, HOUSE, nextDraw, POT } from "../src/shared/types"
 import { A, B, clock, frozen, world as bare } from "./world"
 

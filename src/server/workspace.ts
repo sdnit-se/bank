@@ -17,13 +17,14 @@ import {
   type Portfolio,
   toCents,
 } from "../shared/types"
-import { casinoHelp, economy, historyLine, play, schedule, settle, setup, type Ledger } from "./casino"
+import { casinoHelp, economy, historyLine, play, schedule, settle, setup } from "./casino"
+import type { Ledger, Message } from "./ledger"
 import type { Env } from "./env"
 import { market, marketHelp, marketStats, portfolio, setupMarket, tradeLine } from "./market"
 import { convertToCents, inCents, money as currency } from "./money"
 import { slack, SlackError } from "./slack"
 import { casinoStats, sources } from "./stats"
-import { interact, type Message } from "./tables"
+import { interact } from "./tables"
 import { levy, stimulus } from "./taxes"
 
 export type Install = {

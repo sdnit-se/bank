@@ -1,9 +1,8 @@
 // The Market tab: what you hold and what it is worth now, then how everyone else is doing. Trading happens in Slack.
 
-import { Avatar } from "@opencode/ui/avatar"
 import { For, Show } from "solid-js"
 import { amountText, type Config, type MarketStats, type Portfolio } from "../shared/types"
-import { number, Tile } from "./economy"
+import { number, Ranked, Tile } from "./economy"
 
 const percent = (ratio: number) => `${ratio >= 0 ? "+" : "−"}${Math.abs(ratio * 100).toFixed(1)}%`
 
@@ -59,34 +58,7 @@ export function PortfolioView(props: { config: Config; portfolio: Portfolio | un
   )
 }
 
-function Investors(props: { title: string; note: string; people: MarketStats["investors"] }) {
-  return (
-    <Show when={props.people.length}>
-      <section class="card overflow-hidden">
-        <h2 class="m-0 p-4 pb-2 text-[13px] leading-5 font-[inherit]">
-          <span class="strong">{props.title}</span> <span class="faint">· {props.note}</span>
-        </h2>
-        <For each={props.people}>
-          {(person) => (
-            <div class="row flex items-center gap-3 px-4 py-2.5">
-              <Avatar src={person.image ?? undefined} fallback={person.name} size="large" />
-              <div class="flex-1 min-w-0 flex flex-col">
-                <span class="truncate">{person.name}</span>
-                <span class="faint truncate">
-                  {person.trades} {person.trades === 1 ? "trade" : "trades"} · holds {amountText(person.value)}
-                </span>
-              </div>
-              <span class="num strong" classList={{ positive: person.result > 0, danger: person.result < 0 }}>
-                {person.result > 0 ? "+" : person.result < 0 ? "−" : ""}
-                {amountText(Math.abs(person.result))}
-              </span>
-            </div>
-          )}
-        </For>
-      </section>
-    </Show>
-  )
-}
+const trades = (person: MarketStats["investors"][number]) => `${person.trades} ${person.trades === 1 ? "trade" : "trades"} · holds ${amountText(person.value)}`
 
 /** How everyone is doing: the market's own books, the best and worst investors, and what is held. */
 export function MarketBoard(props: { stats: MarketStats | undefined }) {
@@ -105,8 +77,8 @@ export function MarketBoard(props: { stats: MarketStats | undefined }) {
               to the central bank
             </Tile>
           </section>
-          <Investors title="Wolves" note="up the most" people={stats().investors.filter((person) => person.result > 0).slice(0, 5)} />
-          <Investors title="Bagholders" note="down the most" people={[...stats().investors].reverse().filter((person) => person.result < 0).slice(0, 5)} />
+          <Ranked title="Wolves" note="up the most" people={stats().investors.filter((person) => person.result > 0).slice(0, 5)} amount={(person) => person.result} detail={trades} />
+          <Ranked title="Bagholders" note="down the most" people={[...stats().investors].reverse().filter((person) => person.result < 0).slice(0, 5)} amount={(person) => person.result} detail={trades} />
           <Show when={stats().symbols.length}>
             <section class="card overflow-hidden">
               <table class="chart-table">
