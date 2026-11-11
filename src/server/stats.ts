@@ -4,7 +4,8 @@
 import { CENTS, HOUSE, POT, type CasinoStats, type Gambler } from "../shared/types"
 import type { Ledger } from "./casino"
 
-const DAY = 24 * 60 * 60 * 1000
+const HOUR = 60 * 60 * 1000
+const DAY = 24 * HOUR
 
 export function casinoStats(ledger: Ledger): CasinoStats {
   const coins = (cents: number) => cents / CENTS
@@ -106,6 +107,25 @@ export function casinoStats(ledger: Ledger): CasinoStats {
     return { day: new Date((first + index) * DAY).toISOString().slice(0, 10), profit: coins(running) }
   })
 
+  // The pot hour by hour: it climbs as tickets are bought and drops to nothing at each draw.
+  const flows = ledger.sql
+    .exec<{ at: number; change: number }>("select at, case when to_id = ?1 then amount else -amount end as change from entries where to_id = ?1 or from_id = ?1 order by id", POT)
+    .toArray()
+  const now = Date.now()
+  const thisHour = Math.floor(now / HOUR)
+  const byHour = new Map<number, number>()
+  let held = 0
+  for (const flow of flows) {
+    const hour = Math.floor(flow.at / HOUR)
+    if (hour <= thisHour - 168) held += flow.change
+    else byHour.set(hour, (byHour.get(hour) ?? 0) + flow.change)
+  }
+  const potHours = Array.from({ length: 168 }, (_, index) => {
+    const hour = thisHour - 167 + index
+    held += byHour.get(hour) ?? 0
+    return { at: Math.min((hour + 1) * HOUR, now), pot: coins(held) }
+  })
+
   const sold = ledger.sql.exec<{ n: number | null }>("select sum(count) as n from tickets").one().n ?? 0
   const gifts =
     ledger.sql.exec<{ n: number | null }>("select sum(case when kind = 'refund' then -amount else amount end) as n from entries where kind in ('give', 'reaction', 'refund')").one().n ?? 0
@@ -126,6 +146,7 @@ export function casinoStats(ledger: Ledger): CasinoStats {
     biggestWin: biggest ? { ...who(biggest.actor), game: biggest.game, stake: coins(biggest.stake), paid: coins(biggest.paid ?? 0), at: biggest.at } : null,
     jackpots,
     draws: draws.map((draw) => ({ at: draw.at, pot: coins(draw.amount), winner: who(draw.to_id) })),
+    potHours,
     days,
   }
 }

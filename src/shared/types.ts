@@ -170,6 +170,8 @@ export type CasinoStats = {
   jackpots: number
   /** Every lottery draw, oldest first. */
   draws: { at: number; pot: number; winner: Gambler }[]
+  /** What the pot held at the end of each of the last 168 hours, oldest first. `at` is that moment, in milliseconds. */
+  potHours: { at: number; pot: number }[]
   /** The house's running profit over the last 30 days, oldest first. */
   days: { day: string; profit: number }[]
 }

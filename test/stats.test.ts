@@ -2,7 +2,7 @@
 import { expect, test } from "bun:test"
 import { casinoStats } from "../src/server/stats"
 import { CENTS, HOUSE, POT } from "../src/shared/types"
-import { A, B, frozen, world } from "./world"
+import { A, B, clock, frozen, world } from "./world"
 
 frozen()
 
@@ -48,4 +48,34 @@ test("the stats add up from the ledger", () => {
 test("an empty casino has nothing to report", () => {
   const stats = casinoStats(world().ledger)
   expect(stats).toMatchObject({ staked: 0, bets: 0, houseProfit: 0, games: [], people: [], biggestWin: null, draws: [], jackpots: 0 })
+  expect(stats.potHours).toHaveLength(168)
+  expect(stats.potHours.every((hour) => hour.pot === 0)).toBe(true)
+})
+
+test("the pot is tracked hour by hour, climbing with tickets and emptying at the draw", () => {
+  const w = world()
+  const hour = 60 * 60 * 1000
+  const start = clock.now // 09:00 UTC
+  const pay = (from: string, to: string, coins: number, kind: "bet" | "payout") =>
+    w.ledger.move({ from, to, amount: coins * CENTS, kind, note: "lottery", actor: kind === "bet" ? from : null })
+  // An old ticket from before the week shown still counts toward what the pot holds.
+  clock.now = start - 200 * hour
+  pay(A, POT, 2, "bet")
+  clock.now = start + 10 * 60 * 1000
+  pay(A, POT, 5, "bet")
+  clock.now = start + 3.5 * hour
+  pay(B, POT, 15, "bet")
+  clock.now = start + 5 * hour
+  pay(POT, B, 22, "payout")
+  clock.now = start + 6 * hour + 10 * 60 * 1000
+  pay(A, POT, 3, "bet")
+
+  const { potHours } = casinoStats(w.ledger)
+  expect(potHours).toHaveLength(168)
+  // The last eight hours: 09, 10, 11 hold 7, the 12 o'clock hour adds 15, 13 holds, the draw at 14 empties it, 15 adds 3.
+  expect(potHours.slice(-7).map((point) => point.pot)).toEqual([7, 7, 7, 22, 22, 0, 3])
+  expect(potHours[0]!.pot).toBe(2)
+  expect(potHours[167]!.at).toBe(clock.now)
+  expect(potHours[166]!.at).toBe(start + 6 * hour)
+  expect(potHours[167]!.pot).toBe(w.balance(POT))
 })

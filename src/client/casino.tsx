@@ -6,6 +6,11 @@ import { amountText, type CasinoStats, type Config } from "../shared/types"
 import { Chart, date, number, Section, signed, Tile } from "./economy"
 
 const NAMES: Record<string, string> = { flip: "Coin flip", slots: "Slots", lottery: "Lottery", duel: "Duels" }
+/** The viewer's own calendar day for a moment, as YYYY-MM-DD. */
+const localDay = (at: number) => {
+  const date = new Date(at)
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`
+}
 const share = (part: number, whole: number) => (whole > 0 ? `${Math.round((part / whole) * 100)}%` : "–")
 
 function People(props: { title: string; note: string; people: CasinoStats["people"] }) {
@@ -108,6 +113,16 @@ export function CasinoView(props: { config: Config; stats: CasinoStats | undefin
 
             <Section title="House profit" note="running total, 30 days">
               <Chart days={stats().days} value={(day) => day.profit} kind="line" unit={(value) => `${signed(value)} ${props.config.plural}`} />
+            </Section>
+
+            <Section title="Lottery pot" note="hour by hour, 7 days">
+              <Chart
+                days={stats().potHours.map((hour) => ({ ...hour, day: localDay(hour.at) }))}
+                value={(hour) => hour.pot}
+                kind="line"
+                unit={coins}
+                label={(hour) => new Date(hour.at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false })}
+              />
             </Section>
 
             <Show when={stats().draws.length}>
