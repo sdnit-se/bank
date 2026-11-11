@@ -102,7 +102,8 @@ export async function publish(ledger: Ledger, round: Round, now = Date.now()) {
   ledger.setMeta("paper_at", now)
   const config = ledger.config()
   const coins = (cents: number) => money(config, cents)
-  const at = (id: string) => `<@${id}>`
+  // People are named, never mentioned: a mention notifies them, and nobody asked to be woken up by the paper.
+  const at = (id: string) => ledger.row(id)?.name ?? "someone"
   const names = (ids: string[]) => ids.slice(0, 8).map(at).join(", ")
   const count = (n: number, one: string, many: string) => (n === 1 ? `One ${one}` : `${n} ${many}`)
   const percent = (part: number, whole: number) => `${Math.round((part / whole) * 100)}%`
