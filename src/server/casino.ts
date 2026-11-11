@@ -231,16 +231,18 @@ const lottery: Game = async (bet) => {
   const bought = amount / CENTS
   if (!ledger.move({ from: user, to: POT, amount, kind: "bet", note: "lottery", actor: user }).ok) return quiet(AGAIN)
   ledger.sql.exec("insert into tickets (id, count) values (?, ?) on conflict (id) do update set count = count + excluded.count", user, bought)
-  // The draw is announced wherever the last ticket was bought.
+  // Until an admin picks a channel, the draw is announced wherever the last ticket was bought.
   if (bet.channel) ledger.setMeta("lottery_channel", bet.channel)
-  return loud(
-    `${ticketLine(secureRand, {
-      user: `<@${user}>`,
-      tickets: `${bought} ${bought === 1 ? "ticket" : "tickets"}`,
-      pot: coins(held(ledger, POT)),
-      chance: `${Math.round((mine() / tickets(ledger)) * 100)}%`,
-    })} the draw is ${drawTime()}.`,
+  const sold = `${bought} ${bought === 1 ? "ticket" : "tickets"}`
+  const text = `${ticketLine(secureRand, { user: `<@${user}>`, tickets: sold, pot: coins(held(ledger, POT)), chance: `${Math.round((mine() / tickets(ledger)) * 100)}%` })} the draw is ${drawTime()}.`
+  // The lottery lives in the channel an admin picked: a ticket bought anywhere else is announced there.
+  const home = bet.config.channel
+  if (!home || home === bet.channel) return loud(text)
+  const posted = await ledger.call("chat.postMessage", { channel: home, text, unfurl_links: false }).then(
+    () => true,
+    () => false,
   )
+  return posted ? quiet(`you're in with ${sold}. everyone has been told in <#${home}>, where the draw is announced.`) : loud(text)
 }
 
 const books: Game = ({ ledger, config, coins }) => {
