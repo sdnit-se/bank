@@ -19,6 +19,9 @@ Slack doesn't let apps upload custom emoji, so workspaces add the coin images th
   the house wins beyond its reserve goes to a central bank at the daily draw, which puts a tenth of what it holds
   back into the pot.
 - **An Economy tab**: money supply, GDP (coins given between people), inflation, and who holds what.
+- **Cents.** The ledger counts in hundredths of a coin (`src/server/money.ts`), so `/bank give @someone 0.5` works and
+  a tax or a share price can move less than a whole coin. People still type and read coins; reactions and lottery
+  tickets stay whole. A ledger kept in whole coins is converted once, on the first start of this version.
 - **Import history**, for a workspace that moved here from another Bank and wants its received and given totals back.
 
 `src/server/games.ts` has the odds and the wording, `src/server/casino.ts` the parts that touch the ledger, and

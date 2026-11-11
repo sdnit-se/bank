@@ -3,9 +3,13 @@
 //
 // Nothing here creates or destroys coins. A stake goes to the house or the lottery pot, a win comes back out of them,
 // and what the house wins beyond its reserve goes to the central bank, which pays part of it back into each draw.
+//
+// Like the rest of the ledger this counts in cents, and the settings it is handed are in cents too. The economy
+// figures are the one thing that leaves here for the web app, so they go out in coins.
 
-import { CENTRAL, HOUSE, INSTITUTIONS, POT, currency, type Config, type Economy, type EntryKind } from "../shared/types"
+import { CENTRAL, CENTS, HOUSE, INSTITUTIONS, POT, toCents, type Config, type Economy, type EntryKind } from "../shared/types"
 import type { Env } from "./env"
+import { money as currency } from "./money"
 import {
   brokeLine,
   draw,
@@ -97,8 +101,8 @@ export async function play(
 
   const coins = (amount: number) => currency(config, amount)
   const me = `<@${input.user}>`
-  const word = input.words.find((word) => /^\d+$/.test(word))
-  const amount = word ? Number(word) : 0
+  const word = input.words.find((word) => /^\d+(\.\d{1,2})?$/.test(word))
+  const amount = word ? (toCents(word) ?? 0) : 0
 
   /** Checks a stake against the limit, the player's balance and how fast they're betting. */
   const refuse = async (usage: string) => {
@@ -218,12 +222,14 @@ export async function play(
   }
   const problem = await refuse("say how many tickets: `/bank lottery 5`")
   if (problem) return quiet(problem)
+  if (amount % CENTS) return quiet("a ticket is one coin, so whole coins only. nobody wins with half a ticket.")
+  const tickets = amount / CENTS
   const bought = ledger.move({ from: input.user, to: POT, amount, kind: "bet", note: "lottery", actor: input.user })
   if (!bought.ok) return quiet("something went wrong, try again")
   ledger.sql.exec(
     "insert into tickets (id, count) values (?, ?) on conflict (id) do update set count = count + excluded.count",
     input.user,
-    amount,
+    tickets,
   )
   // The draw is announced wherever the last ticket was bought.
   if (input.channel) ledger.setMeta("lottery_channel", input.channel)
@@ -231,7 +237,7 @@ export async function play(
   return loud(
     ticketLine(secureRand, {
       user: me,
-      tickets: `${amount} ${amount === 1 ? "ticket" : "tickets"}`,
+      tickets: `${tickets} ${tickets === 1 ? "ticket" : "tickets"}`,
       pot: coins(held(ledger, POT)),
       chance: `${Math.round((count(input.user) / total()) * 100)}%`,
     }),
@@ -325,15 +331,22 @@ export function economy(ledger: Ledger): Economy {
   // Gini over sorted balances: how far the spread is from everyone holding the same.
   const gini = total > 0 ? sum(active.map((balance, index) => (2 * index - active.length + 1) * balance)) / (active.length * total) : 0
 
+  const coins = (cents: number) => cents / CENTS
   return {
-    supply: { ...supply, total: supply.people + supply.house + supply.pot + supply.central },
+    supply: {
+      people: coins(supply.people),
+      house: coins(supply.house),
+      pot: coins(supply.pot),
+      central: coins(supply.central),
+      total: coins(supply.people + supply.house + supply.pot + supply.central),
+    },
     members: active.length,
-    growth: { week: days[29]!.supply - days[22]!.supply, month: days[29]!.supply - before },
-    gdp: { week: sum(week.map((day) => day.gifts)), month: sum(days.map((day) => day.gifts)) },
-    turnover: { week: sum(week.map((day) => day.bets)), month: sum(days.map((day) => day.bets)) },
+    growth: { week: coins(days[29]!.supply - days[22]!.supply), month: coins(days[29]!.supply - before) },
+    gdp: { week: coins(sum(week.map((day) => day.gifts))), month: coins(sum(days.map((day) => day.gifts))) },
+    turnover: { week: coins(sum(week.map((day) => day.bets))), month: coins(sum(days.map((day) => day.bets))) },
     richestShare: total > 0 ? active[active.length - 1]! / total : 0,
     gini,
     broke: active.filter((balance) => balance === 0).length,
-    days,
+    days: days.map((day) => ({ day: day.day, supply: coins(day.supply), gifts: coins(day.gifts), bets: coins(day.bets) })),
   }
 }

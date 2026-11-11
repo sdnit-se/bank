@@ -1,4 +1,4 @@
-import type { Config, Entry } from "../shared/types"
+import { toCents, type Config, type Entry } from "../shared/types"
 import type { Env } from "./env"
 import { botScopes, decodeJwt, sign, slack, unsign, verified } from "./slack"
 import type { EventEnvelope, Viewer } from "./workspace"
@@ -244,13 +244,13 @@ async function api(request: Request, env: Env, path: string) {
   if (route === "GET /people") return ws.people(user)
   if (route === "POST /give") {
     const input = await body<{ to: string; amount: number; note?: string }>()
-    return ws.give(user, input.to, Number(input.amount), input.note?.trim() || null)
+    return ws.give(user, input.to, toCents(input.amount) ?? Number.NaN, input.note?.trim() || null)
   }
   if (route === "GET /admin/history") return ws.history(user, "all", 500)
   if (route === "PUT /admin/config") return ws.saveConfig(user, await body<Config>())
   if (route === "POST /admin/adjust") {
     const input = await body<{ to: string; amount: number; note?: string }>()
-    return ws.adjust(user, input.to, Number(input.amount), input.note?.trim() || null)
+    return ws.adjust(user, input.to, toCents(input.amount) ?? Number.NaN, input.note?.trim() || null)
   }
   if (route === "POST /admin/import") return ws.importHistory(user, (await body<{ entries: Entry[] }>()).entries)
   if (route === "POST /admin/redact") return ws.redact(user, Number((await body<{ id: number }>()).id))

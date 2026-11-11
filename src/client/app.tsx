@@ -9,7 +9,7 @@ import { Tabs } from "@opencode/ui/tabs"
 import { TextInput } from "@opencode/ui/text-input"
 import { createMemo, createResource, createRoot, createSignal, For, type JSX, Match, Show, Switch } from "solid-js"
 import { createStore, reconcile, unwrap } from "solid-js/store"
-import { CENTRAL, currency, HOUSE, INSTITUTIONS, type Config, type CustomEmoji, type Entry, type History, type Me } from "../shared/types"
+import { amountText, CENTRAL, currency, HOUSE, INSTITUTIONS, type Config, type CustomEmoji, type Entry, type History, type Me } from "../shared/types"
 import { api, ApiError, BASE, type Person } from "./api"
 import { EconomyView } from "./economy"
 
@@ -67,7 +67,7 @@ function Amount(props: { me: Me; value: number; prefix?: string; size?: number }
   return (
     <span class="inline-flex items-center gap-1 whitespace-nowrap num">
       {props.prefix}
-      {props.value}
+      {amountText(props.value)}
       <Show when={symbolUrl(props.me)} fallback={<span>{Math.abs(props.value) === 1 ? props.me.config.singular : props.me.config.plural}</span>}>
         {(src) => <Coin src={src()} size={props.size ?? 16} />}
       </Show>
@@ -247,7 +247,7 @@ function Dashboard(props: { me: Me; refresh: () => void }) {
         <div class="flex flex-col gap-1">
           <span class="muted">Your balance</span>
           <div class="flex items-center gap-2.5">
-            <span class="display">{balance()}</span>
+            <span class="display">{amountText(balance())}</span>
             <Show when={symbolUrl(props.me)}>{(src) => <Coin src={src()} size={32} />}</Show>
             <span class="muted text-[15px] self-end pb-1.5">{balance() === 1 ? config().singular : config().plural}</span>
           </div>
@@ -297,7 +297,7 @@ function Stat(props: { label: string; value: number }) {
   return (
     <div class="flex flex-col sm:items-end">
       <span class="faint">{props.label}</span>
-      <span class="num strong text-[15px]">{props.value}</span>
+      <span class="num strong text-[15px]">{amountText(props.value)}</span>
     </div>
   )
 }
@@ -351,7 +351,7 @@ function LeaderboardView(props: { me: Me; accounts: Me["account"][] | undefined 
                       <Badge variant="subtle">You</Badge>
                     </Show>
                   </span>
-                  <span class="faint num hidden sm:inline">{account!.received} received</span>
+                  <span class="faint num hidden sm:inline">{amountText(account!.received)} received</span>
                   <span class="strong min-w-16 flex justify-end">
                     <Amount me={props.me} value={account!.balance} />
                   </span>
@@ -618,10 +618,10 @@ function AmountFields(props: {
         <TextInput
           class="w-full"
           numeric
-          inputmode="numeric"
+          inputmode="decimal"
           placeholder="10"
           value={props.amount}
-          onInput={(event) => props.setAmount(event.currentTarget.value.replace(/[^0-9]/g, ""))}
+          onInput={(event) => props.setAmount(event.currentTarget.value.replace(",", ".").replace(/[^0-9.]/g, ""))}
           trailing={
             <Show when={props.symbol}>
               {(src) => (

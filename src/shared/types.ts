@@ -136,6 +136,22 @@ export type Admin = { id: string; name: string; image: string | null; source: "i
 
 export type CustomEmoji = { name: string; url: string }
 
+/** The ledger counts in hundredths of a coin. Everything shown to people, and sent to the web app, is in coins. */
+export const CENTS = 100
+
+/** An amount of coins as whole cents, or null when it isn't a number with at most two decimals. */
+export function toCents(coins: number | string | null | undefined) {
+  const text = typeof coins === "number" ? String(coins) : (coins ?? "").trim()
+  if (!/^-?\d+(\.\d{1,2})?$/.test(text)) return null
+  const cents = Math.round(Number(text) * CENTS)
+  return Number.isSafeInteger(cents) ? cents : null
+}
+
+/** Coins as text: whole when they are whole, otherwise to the cent. 103, 103.50, 0.05. */
+export function amountText(coins: number) {
+  return Number.isInteger(coins) ? String(coins) : coins.toFixed(2)
+}
+
 export function currency(config: Config, amount: number) {
-  return `${amount} ${Math.abs(amount) === 1 ? config.singular : config.plural}`
+  return `${amountText(amount)} ${Math.abs(amount) === 1 ? config.singular : config.plural}`
 }

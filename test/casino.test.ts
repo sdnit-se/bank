@@ -1,10 +1,12 @@
 // Plays the casino against a stand-in ledger: an in-memory SQLite database with the same tables and the same rule
 // for moving coins as the Workspace. What matters most here is that no game creates or destroys a coin.
+// The ledger is in cents, as the real one is. The helpers below take and give coins so the tests read naturally.
 import { Database } from "bun:sqlite"
 import { afterEach, beforeEach, expect, test } from "bun:test"
 import { economy, play, settle, setup, type Ledger } from "../src/server/casino"
 import { nextDraw } from "../src/server/games"
-import { CENTRAL, defaultConfig, HOUSE, POT, type Config } from "../src/shared/types"
+import { inCents } from "../src/server/money"
+import { CENTRAL, CENTS, defaultConfig, HOUSE, POT, type Config } from "../src/shared/types"
 
 const A = "UAAA"
 const B = "UBBB"
@@ -40,7 +42,7 @@ function world(games: Partial<Config["games"]> = {}) {
       return cursor([], statement.run(...(params as never[])).changes)
     },
   }
-  const config: Config = { ...defaultConfig, games: { ...defaultConfig.games, enabled: true, ...games } }
+  const config: Config = inCents({ ...defaultConfig, games: { ...defaultConfig.games, enabled: true, ...games } })
   const posts: Record<string, unknown>[] = []
   const meta = new Map<string, unknown>()
   let alarm: number | null = null
@@ -72,17 +74,18 @@ function world(games: Partial<Config["games"]> = {}) {
   setup(sql as never)
   for (const id of [A, B]) {
     db.query("insert into accounts (id, name, created_at) values (?, ?, ?)").run(id, id.toLowerCase(), now)
-    ledger.move({ from: null, to: id, amount: 100, kind: "grant" })
+    ledger.move({ from: null, to: id, amount: 100 * CENTS, kind: "grant" })
   }
-  const print = (to: string, amount: number) => ledger.move({ from: null, to, amount, kind: "adjust" })
-  const balance = (id: string) => row(id)!.balance
-  const total = () => (db.query("select sum(balance) as n from accounts").get() as { n: number }).n
-  const lowest = () => (db.query("select min(balance) as n from accounts").get() as { n: number }).n
+  const print = (to: string, coins: number) => ledger.move({ from: null, to, amount: coins * CENTS, kind: "adjust" })
+  const give = (from: string, to: string, coins: number) => ledger.move({ from, to, amount: coins * CENTS, kind: "give" })
+  const balance = (id: string) => row(id)!.balance / CENTS
+  const total = () => (db.query("select sum(balance) as n from accounts").get() as { n: number }).n / CENTS
+  const lowest = () => (db.query("select min(balance) as n from accounts").get() as { n: number }).n / CENTS
   const say = (user: string, text: string, channel: string | null = "C1") => {
     const words = text.split(" ")
     return play(ledger, { sub: words[0]!, words: words.slice(1), user, channel })
   }
-  return { ledger, config, posts, print, balance, total, lowest, say, alarm: () => alarm }
+  return { ledger, config, posts, print, give, balance, total, lowest, say, alarm: () => alarm }
 }
 
 test("the casino is closed unless an admin opens it, and leaves other commands alone", async () => {
@@ -96,11 +99,12 @@ test("the house only takes a bet it could pay in full", async () => {
   const w = world()
   expect((await w.say(A, "flip 10"))!.text).toContain("the house is broke")
   w.print(HOUSE, 100)
-  // Slots can pay 20 times the stake, so 100 covers a stake of 5 and no more.
+  // Slots can pay 20 times the stake, so 100 coins cover a stake of 5.26 and not a cent more.
   const refused = await w.say(A, "slots 25")
   expect(refused!.response_type).toBe("ephemeral")
-  expect(refused!.text).toContain("the most it will take on this is 5 coins")
-  expect((await w.say(A, "slots 5"))!.response_type).toBe("in_channel")
+  expect(refused!.text).toContain("the most it will take on this is 5.26 coins")
+  expect((await w.say(A, "slots 5.27"))!.response_type).toBe("ephemeral")
+  expect((await w.say(A, "slots 5.26"))!.response_type).toBe("in_channel")
 })
 
 test("bets respect the limit, the player's balance and the pace", async () => {
@@ -108,7 +112,7 @@ test("bets respect the limit, the player's balance and the pace", async () => {
   w.print(HOUSE, 500)
   expect((await w.say(A, "flip 26"))!.text).toContain("the limit is 25 coins")
   expect((await w.say(A, "flip"))!.text).toContain("say how much")
-  w.ledger.move({ from: A, to: B, amount: 97, kind: "give" })
+  w.give(A, B, 97)
   const broke = await w.say(A, "flip 10")
   expect(broke!.response_type).toBe("ephemeral")
   expect(broke!.text).toContain("3 coins")
@@ -131,7 +135,7 @@ test("no amount of gambling creates or destroys a coin", async () => {
   }
   await settle(w.ledger)
   expect(w.total()).toBe(before)
-  expect(w.balance(HOUSE)).toBeLessThanOrEqual(w.config.games.reserve)
+  expect(w.balance(HOUSE)).toBeLessThanOrEqual(w.config.games.reserve / CENTS)
 })
 
 test("a duel moves the stake from the loser to the winner, once", async () => {
@@ -192,7 +196,7 @@ test("the central bank refills a house that lost", async () => {
 test("the economy adds up", async () => {
   const w = world()
   w.print(HOUSE, 500)
-  w.ledger.move({ from: A, to: B, amount: 30, kind: "give" })
+  w.give(A, B, 30)
   await w.say(A, "lottery 10")
   const figures = economy(w.ledger)
   expect(figures.supply).toEqual({ people: 190, house: 500, pot: 10, central: 0, total: 700 })
@@ -205,4 +209,16 @@ test("the economy adds up", async () => {
   expect(figures.members).toBe(2)
   expect(figures.richestShare).toBeCloseTo(130 / 190)
   expect(figures.broke).toBe(0)
+})
+
+test("stakes can be to the cent, lottery tickets cannot", async () => {
+  const w = world()
+  w.print(HOUSE, 500)
+  expect((await w.say(A, "flip 0.50"))!.response_type).toBe("in_channel")
+  expect([99.5, 100.5]).toContain(w.balance(A))
+  expect((await w.say(A, "flip 0.505"))!.text).toContain("say how much")
+  expect((await w.say(A, "lottery 2.5"))!.text).toContain("whole coins only")
+  expect((await w.say(A, "lottery 2"))!.response_type).toBe("in_channel")
+  expect(w.balance(POT)).toBe(2)
+  expect(w.total()).toBe(700)
 })

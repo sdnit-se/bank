@@ -1,6 +1,6 @@
 import { DurableObject } from "cloudflare:workers"
 import {
-  currency,
+  CENTS,
   defaultConfig,
   EMOJI_NAME,
   type Account,
@@ -12,10 +12,12 @@ import {
   type EntryKind,
   type History,
   type Me,
+  toCents,
 } from "../shared/types"
 import { economy, historyLine, play, settle, setup, type Ledger } from "./casino"
 import type { Env } from "./env"
 import { importHistory } from "./migrate"
+import { convertToCents, inCents, money as currency } from "./money"
 import { slack, SlackError } from "./slack"
 
 export type Install = {
@@ -182,6 +184,7 @@ export class Workspace extends DurableObject<Env> {
       this.sql.exec("alter table accounts add column gone integer not null default 0")
     }
     setup(this.sql)
+    this.ctx.storage.transactionSync(() => convertToCents(this.sql))
   }
 
   /** What the casino is lent: see casino.ts. */
@@ -224,7 +227,13 @@ export class Workspace extends DurableObject<Env> {
     return this.meta<Install>("install")
   }
 
+  /** The settings in cents, which is how everything in here counts. */
   private config(): Config {
+    return inCents(this.settings())
+  }
+
+  /** The settings as an admin saved them and as the web app shows them, in coins. */
+  private settings(): Config {
     const config = { ...defaultConfig, ...this.meta<Partial<Config>>("config") }
     // Configs saved before the symbol became an emoji held a literal character.
     if (!EMOJI_NAME.test(config.symbol)) config.symbol = defaultConfig.symbol
@@ -260,9 +269,9 @@ export class Workspace extends DurableObject<Env> {
       id: row.id,
       name: row.name,
       image: row.image,
-      balance: row.balance,
-      received: row.received,
-      given: row.given,
+      balance: row.balance / CENTS,
+      received: row.received / CENTS,
+      given: row.given / CENTS,
     }
   }
 
@@ -273,7 +282,7 @@ export class Workspace extends DurableObject<Env> {
       kind: row.kind,
       from: row.from_id,
       to: row.to_id,
-      amount: row.amount,
+      amount: row.amount / CENTS,
       note: row.note,
       actor: row.actor,
       link: row.link,
@@ -649,7 +658,7 @@ export class Workspace extends DurableObject<Env> {
     await this.freshen()
     const install = this.install()
     const row = this.row(viewer.id)
-    const config = this.config()
+    const config = this.settings()
     const all = install?.token ? await this.emojiUrls() : {}
     const emoji: Record<string, string> = {}
     for (const name of [config.symbol, ...config.emoji.map((item) => item.name)]) {
@@ -708,7 +717,7 @@ export class Workspace extends DurableObject<Env> {
     this.assertActive(viewer)
     const result = await this.transfer(viewer.id, to, amount, note?.slice(0, 280) ?? null, "give")
     if (!result.ok) throw new Error(result.message)
-    return { balance: result.balance }
+    return { balance: result.balance / CENTS }
   }
 
   // ---------- admin
@@ -733,7 +742,7 @@ export class Workspace extends DurableObject<Env> {
       .filter((item) => !names.has(item.name) && names.add(item.name))
       .slice(0, 24)
     // A client from before the games existed sends none, and shouldn't switch them off by saving.
-    const games = input.games ?? this.config().games
+    const games = input.games ?? this.settings().games
     const whole = (value: unknown, least: number) => Math.max(least, Math.min(1_000_000, Math.floor(Number(value) || 0)))
     const config: Config = {
       singular: clean(input.singular, 32).replace(/[<>&*_~`]/g, "") || defaultConfig.singular,
@@ -753,8 +762,8 @@ export class Workspace extends DurableObject<Env> {
   async adjust(viewer: Viewer, target: string, amount: number, note: string | null) {
     this.assertAdmin(viewer)
     amount = Math.trunc(amount)
-    if (!Number.isSafeInteger(amount) || !amount) throw new Error("amount must be a whole number other than zero")
-    if (Math.abs(amount) > 1_000_000) throw new Error("adjust at most 1,000,000 at a time")
+    if (!Number.isSafeInteger(amount) || !amount) throw new Error("the amount has to be a number other than zero, to the cent at most")
+    if (Math.abs(amount) > 1_000_000 * CENTS) throw new Error("adjust at most 1,000,000 at a time")
     note = note?.slice(0, 280) ?? null
     console.log("adjust", { by: viewer.id, target, amount })
     const accounts = await this.ensure([target])
@@ -763,7 +772,7 @@ export class Workspace extends DurableObject<Env> {
       amount > 0
         ? this.move({ from: null, to: target, amount, kind: "adjust", note, actor: viewer.id })
         : this.move({ from: target, to: null, amount: -amount, kind: "adjust", note, actor: viewer.id })
-    if (!result.ok) throw new Error(result.reason === "insufficient" ? `they only have ${result.balance}` : "unknown person")
+    if (!result.ok) throw new Error(result.reason === "insufficient" ? `they only have ${result.balance / CENTS}` : "unknown person")
     return { ok: true }
   }
 
@@ -771,7 +780,9 @@ export class Workspace extends DurableObject<Env> {
   async importHistory(viewer: Viewer, entries: Entry[]) {
     this.assertAdmin(viewer)
     if (this.meta("imported")) throw new Error("a history has already been imported here")
-    const result = this.ctx.storage.transactionSync(() => importHistory(this.sql, entries, this.config().emoji))
+    // The file is in coins, like everything else that comes in from outside.
+    const inside = (entries ?? []).map((entry) => ({ ...entry, amount: toCents(entry.amount) ?? Number.NaN }))
+    const result = this.ctx.storage.transactionSync(() => importHistory(this.sql, inside, this.config().emoji))
     this.setMeta("imported", { at: Date.now(), by: viewer.id, ...result })
     console.log("import", { by: viewer.id, ...result })
     return result
@@ -888,7 +899,7 @@ export class Workspace extends DurableObject<Env> {
     link: string | null = null,
   ): Promise<{ ok: true; balance: number } | { ok: false; message: string }> {
     const config = this.config()
-    if (!Number.isSafeInteger(amount) || amount <= 0) return { ok: false, message: "the amount has to be a whole number above 0" }
+    if (!Number.isSafeInteger(amount) || amount <= 0) return { ok: false, message: "the amount has to be more than 0, to the cent at most" }
     if (from === to) return { ok: false, message: `you can't give ${config.plural} to yourself` }
     if (this.row(from)?.gone) return { ok: false, message: "your account is deactivated" }
     // At most 30 gifts a minute per person, so nobody can flood a channel.
@@ -983,10 +994,10 @@ export class Workspace extends DurableObject<Env> {
     // give / send / pay, or just "/bank @someone 10"
     const rest = ["give", "send", "pay", "tip"].includes(sub) ? words.slice(1) : words
     const mention = rest.find((word) => MENTION.test(word))
-    const amountWord = rest.find((word) => /^\d+$/.test(word))
+    const amountWord = rest.find((word) => /^\d+(\.\d{1,2})?$/.test(word))
     if (!mention || !amountWord) return reply(`didn't get that.\n\n${this.help(config)}`)
     const to = mention.match(MENTION)![1]!
-    const amount = Number(amountWord)
+    const amount = toCents(amountWord) ?? 0
     const note =
       rest
         .filter((word) => word !== mention && word !== amountWord)
@@ -1003,7 +1014,7 @@ export class Workspace extends DurableObject<Env> {
   }
 
   private help(config: Config) {
-    const emoji = config.emoji.map((item) => `:${item.name}: ${item.amount}`).join("  ")
+    const emoji = config.emoji.map((item) => `:${item.name}: ${item.amount / CENTS}`).join("  ")
     return [
       `*bank* · everyone starts with ${currency(config, config.starting)}`,
       `\`/bank give @someone 10 for fixing the deploy\``,

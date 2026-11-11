@@ -1,7 +1,7 @@
 // The Economy tab: how many coins exist, where they sit, and how much they move.
 
 import { createMemo, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js"
-import { currency, type Config, type Economy, type EconomyDay } from "../shared/types"
+import type { Config, Economy, EconomyDay } from "../shared/types"
 
 const number = (value: number) => value.toLocaleString("en-US")
 const signed = (value: number) => `${value > 0 ? "+" : value < 0 ? "−" : ""}${number(Math.abs(value))}`
@@ -142,7 +142,7 @@ function Section(props: { title: string; note: string; children: JSX.Element }) 
 }
 
 export function EconomyView(props: { config: Config; economy: Economy | undefined }) {
-  const coins = (value: number) => currency(props.config, value).replace(/^-?\d+/, number(value))
+  const coins = (value: number) => `${number(value)} ${Math.abs(value) === 1 ? props.config.singular : props.config.plural}`
   const percent = (value: number) => `${Math.round(value * 100)}%`
   return (
     <Show when={props.economy} fallback={<section class="card px-4 py-8 text-center faint">Loading…</section>}>
