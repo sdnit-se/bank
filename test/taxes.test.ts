@@ -1,10 +1,11 @@
 // Taxes and the stimulus, against the stand-in ledger. Every coin taxed has to arrive at the central bank, and a
 // rate of zero has to take nothing.
 import { afterEach, expect, test } from "bun:test"
+import { bonds, matureBonds } from "../src/server/bonds"
 import { play, settle } from "../src/server/casino"
 import { market } from "../src/server/market"
-import { collectWealth, levy, payInterest, stimulus } from "../src/server/taxes"
-import { CENTRAL, CENTS, HOUSE, nextDraw, POT } from "../src/shared/types"
+import { collectWealth, levy, stimulus } from "../src/server/taxes"
+import { BONDS, CENTRAL, CENTS, HOUSE, nextDraw, POT } from "../src/shared/types"
 import { A, B, clock, frozen, world } from "./world"
 
 frozen()
@@ -126,18 +127,25 @@ test("a stimulus splits the central bank's reserves equally, and only what it ho
   expect(() => stimulus(w.ledger, 1, A)).toThrow("less than a cent each")
 })
 
-test("interest is paid weekly from the central bank's reserves, and shared out when they fall short", () => {
+test("a bond locks coins for a week and comes back with interest from the central bank's reserves", async () => {
   const w = taxing({ interest: 10 })
-  w.print(A, 100)
-  w.print(CENTRAL, 40)
-  expect(payInterest(w.ledger)).toBeNull()
-  clock.now += 8 * DAY
-  // A holds 200 and B 100, so 20 and 10 are due and the reserves cover it.
-  expect(payInterest(w.ledger)).toEqual({ paid: 30 * CENTS, people: 2 })
-  expect([w.balance(A), w.balance(B), w.balance(CENTRAL)]).toEqual([220, 110, 10])
-  clock.now += 8 * DAY
-  // Now 22 and 11 are due against 10 in reserve: everyone gets the same fraction, and nothing is printed.
-  expect(payInterest(w.ledger)).toEqual({ paid: 999, people: 2 })
-  expect([w.balance(A), w.balance(B), w.balance(CENTRAL)]).toEqual([226.66, 113.33, 0.01])
-  expect(w.total()).toBe(340)
+  const say = (user: string, text: string) => bonds(w.ledger, { sub: "bond", words: text.split(" "), user, channel: "C7" })
+  w.print(CENTRAL, 12)
+  expect((await say(A, "500"))!.response_type).toBe("ephemeral")
+  expect((await say(A, "100"))!.response_type).toBe("in_channel")
+  expect((await say(B, "50"))!.response_type).toBe("in_channel")
+  expect([w.balance(A), w.balance(B), w.balance(BONDS)]).toEqual([0, 50, 150])
+  expect(w.alarm()).toBe(nextDraw(clock.now))
+
+  clock.now += 6 * DAY
+  expect(matureBonds(w.ledger)).toBeNull()
+  clock.now += 2 * DAY
+  // 10 and 5 are due against 12 in reserve: both get the same four fifths, and all that was lent comes back.
+  expect(matureBonds(w.ledger)).toEqual({ owners: [A, B], lent: 150 * CENTS, paid: 12 * CENTS, short: true })
+  expect([w.balance(A), w.balance(B), w.balance(BONDS), w.balance(CENTRAL)]).toEqual([108, 104, 0, 0])
+  expect(matureBonds(w.ledger)).toBeNull()
+  expect(w.total()).toBe(212)
+
+  // With no rate set, no bonds are sold.
+  expect((await bonds(taxing({}).ledger, { sub: "bond", words: ["10"], user: A, channel: null }))!.text).toContain("isn't selling bonds")
 })

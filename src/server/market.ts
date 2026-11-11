@@ -320,14 +320,6 @@ export async function market(ledger: Ledger, input: { sub: string; words: string
   })
 }
 
-/** How a market entry reads in `/bank history`, or null when the entry isn't one. */
-export function tradeLine(row: { kind: string; from_id: string | null; note: string | null }, user: string, amount: string) {
-  if (row.kind === "buy") return `-${amount} into ${row.note ?? "the market"}`
-  if (row.kind === "sell") return `+${amount} from selling ${row.note ?? "a position"}`
-  if (row.kind === "tax") return row.from_id === user ? `-${amount} ${row.note ?? "tax"}` : null
-  return null
-}
-
 /** What someone holds, valued now, in coins for the web app. */
 export async function portfolio(ledger: Ledger, user: string): Promise<Portfolio> {
   const config = ledger.config()

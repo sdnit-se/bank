@@ -103,6 +103,13 @@
         "description": "Look a price up",
         "usage_hint": "ERIC-B.ST · AAPL · BTC-USD",
         "should_escape": true
+      },
+      {
+        "command": "/bank-bond",
+        "url": "https://labs.shebang.se/bank/slack/commands",
+        "description": "Lock coins away for a week and get them back with interest",
+        "usage_hint": "50",
+        "should_escape": true
       }
     ]
   },

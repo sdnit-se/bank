@@ -17,10 +17,11 @@ import {
   type Portfolio,
   toCents,
 } from "../shared/types"
-import { casinoHelp, economy, historyLine, play, schedule, settle, setup } from "./casino"
-import type { Ledger, Message } from "./ledger"
+import { announceRate, bonded, bondHelp, bonds } from "./bonds"
+import { casinoHelp, economy, play, settle, setup } from "./casino"
+import { historyLine, schedule, type Ledger, type Message } from "./ledger"
 import type { Env } from "./env"
-import { market, marketHelp, marketStats, portfolio, setupMarket, tradeLine } from "./market"
+import { market, marketHelp, marketStats, portfolio, setupMarket } from "./market"
 import { convertToCents, inCents, money as currency } from "./money"
 import { slack, SlackError } from "./slack"
 import { casinoStats, sources } from "./stats"
@@ -794,9 +795,11 @@ export class Workspace extends DurableObject<Env> {
       market: { enabled: Boolean(market.enabled), fee: rate(market.fee, 25) },
       taxes: { transfer: rate(taxes.transfer, 50), winnings: rate(taxes.winnings, 90), wealth: rate(taxes.wealth, 50), wealthAbove: whole(taxes.wealthAbove, 0), interest: rate(taxes.interest, 50) },
     }
+    const rateBefore = this.settings().taxes.interest
     this.setMeta("config", config)
-    // The daily alarm settles the house, draws the lottery, collects the wealth tax and pays interest.
-    if (config.games.enabled || config.taxes.wealth > 0 || config.taxes.interest > 0) await schedule(this.ledger())
+    await announceRate(this.ledger(), rateBefore, config.taxes.interest)
+    // The daily alarm settles the house, draws the lottery and collects the wealth tax, so make sure one is coming.
+    if (config.games.enabled || config.taxes.wealth > 0) await schedule(this.ledger())
     return config
   }
 
@@ -999,6 +1002,7 @@ export class Workspace extends DurableObject<Env> {
         `${currency(config, row?.received ?? 0)} given to you by people`,
         from.casino ? `casino ${signed(from.casino)}` : "",
         from.market ? `market ${signed(from.market)}` : "",
+        bonded(this.ledger(), params.user_id) ? `${currency(config, bonded(this.ledger(), params.user_id))} more locked in bonds` : "",
       ].filter(Boolean)
       return reply(`you have *${currency(config, row?.balance ?? 0)}* :${config.symbol}:\n${parts.join(" · ")}`.trim())
     }
@@ -1032,7 +1036,7 @@ export class Workspace extends DurableObject<Env> {
       const lines = rows.map((row) => {
         const amount = currency(config, row.amount)
         const note = row.note ? ` · ${escape(row.note)}` : ""
-        const game = historyLine(row, params.user_id, amount) ?? tradeLine(row, params.user_id, amount)
+        const game = historyLine(row, params.user_id, amount)
         if (game) return game
         if (row.kind === "grant") return `+${amount} starting balance`
         if (row.kind === "adjust") return row.to_id === params.user_id ? `+${amount} from an admin${note}` : `-${amount} by an admin${note}`
@@ -1049,6 +1053,8 @@ export class Workspace extends DurableObject<Env> {
     if (played) return played
     const traded = await market(this.ledger(), { sub, words: words.slice(1), user: params.user_id })
     if (traded) return traded
+    const saved = await bonds(this.ledger(), { sub, words: words.slice(1), user: params.user_id, channel: params.channel ?? null })
+    if (saved) return saved
 
     // give / send / pay, or just "/bank @someone 10"
     const rest = ["give", "send", "pay", "tip"].includes(sub) ? words.slice(1) : words
@@ -1086,6 +1092,7 @@ export class Workspace extends DurableObject<Env> {
       ],
       casinoHelp(config),
       marketHelp(config),
+      bondHelp(config),
       [`<${this.env.PUBLIC_URL}|open bank> · the leaderboard, the economy, and who the casino has ruined`],
     ]
       .map((lines) => lines.filter(Boolean).join("\n"))

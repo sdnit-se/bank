@@ -9,7 +9,7 @@ import { Tabs } from "@opencode/ui/tabs"
 import { TextInput } from "@opencode/ui/text-input"
 import { createMemo, createResource, createRoot, createSignal, For, type JSX, Match, Show, Switch } from "solid-js"
 import { createStore, reconcile, unwrap } from "solid-js/store"
-import { amountText, CENTRAL, currency, HOUSE, INSTITUTIONS, type Config, type CustomEmoji, type Entry, type History, type Me } from "../shared/types"
+import { amountText, BONDS, CENTRAL, currency, HOUSE, INSTITUTIONS, type Config, type CustomEmoji, type Entry, type History, type Me } from "../shared/types"
 import { api, ApiError, BASE, type Person } from "./api"
 import { CasinoView } from "./casino"
 import { EconomyView } from "./economy"
@@ -455,6 +455,8 @@ function describe(entry: Entry, history: History, viewer: string | null) {
       return `${name(entry.to)} sold ${entry.note ?? "shares"}`
     case "tax":
       return `${name(entry.actor ?? entry.from)} paid a ${entry.note ?? "tax"}`
+    case "bond":
+      return entry.to === BONDS ? `${name(entry.from)} bought a bond at ${entry.note}` : `${possessive(entry.to)} bond matured`
     case "print":
       return `the market printed ${viewer === entry.actor ? "your" : `${name(entry.actor)}'s`} gain on ${entry.note ?? "a sale"}`
     default:
@@ -464,7 +466,7 @@ function describe(entry: Entry, history: History, viewer: string | null) {
 
 /** Entries whose note is written by Bank and already part of the description. */
 function fixedNote(entry: Entry) {
-  return ["grant", "bet", "payout", "duel", "sweep", "stimulus", "buy", "sell", "tax", "print"].includes(entry.kind)
+  return ["grant", "bet", "payout", "duel", "sweep", "stimulus", "buy", "sell", "tax", "print", "bond"].includes(entry.kind)
 }
 
 const page = 30
@@ -1008,12 +1010,12 @@ function SettingsPanel(props: { me: Me; changed: () => void }) {
           </Numbers>
         </Show>
 
-        <Numbers title="Taxes and interest" note="Taxes go to the central bank, and interest is paid from what it holds. Zero is off. A taxed gift still counts in full toward what someone has received.">
+        <Numbers title="Taxes and bonds" note="Taxes go to the central bank, which pays the interest on one-week bonds out of what it holds. Zero is off. A taxed gift still counts in full toward what someone has received.">
           <NumberField decimal label="Gifts, %" value={draft.taxes.transfer} set={(value) => setDraft("taxes", "transfer", value)} />
           <NumberField decimal label="Winnings, %" value={draft.taxes.winnings} set={(value) => setDraft("taxes", "winnings", value)} />
           <NumberField decimal label="Wealth, % a week" value={draft.taxes.wealth} set={(value) => setDraft("taxes", "wealth", value)} />
           <NumberField label="Wealth above" value={draft.taxes.wealthAbove} set={(value) => setDraft("taxes", "wealthAbove", value)} />
-          <NumberField decimal label="Interest, % a week" value={draft.taxes.interest} set={(value) => setDraft("taxes", "interest", value)} />
+          <NumberField decimal label="Bond rate, % a week" value={draft.taxes.interest} set={(value) => setDraft("taxes", "interest", value)} />
         </Numbers>
 
         <div class="flex flex-col gap-2">

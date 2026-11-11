@@ -26,8 +26,8 @@ Slack doesn't let apps upload custom emoji, so workspaces add the coin images th
   stay in the market and pay for gains; it prints only what it lacks. Each trade is taxed to the central bank.
   `src/server/market.ts`.
 - **Taxes**, all off until an admin sets a rate: on gifts, on winnings and market gains, and weekly on wealth above
-  a threshold. All of it goes to the central bank, which can pay weekly interest on what people hold, and which an
-  admin can pay back out to everyone as a stimulus.
+  a threshold. All of it goes to the central bank, which pays the interest on one-week savings bonds
+  (`/bank bond 50`, `src/server/bonds.ts`) and which an admin can pay back out to everyone as a stimulus.
   `src/server/taxes.ts`.
 - **Recognition kept apart from winnings.** The leaderboard ranks by coins received from colleagues first, with
   "richest" as a separate view, and everyone's card says how much came from people, the casino and the market.

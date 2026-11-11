@@ -7,7 +7,8 @@
 // Like the rest of the ledger this counts in cents, and the settings it is handed are in cents too. The economy
 // figures are the one thing that leaves here for the web app, so they go out in coins.
 
-import { CENTRAL, CENTS, HOUSE, INSTITUTIONS, MARKET, nextDraw, POT, toCents, type Config, type Economy } from "../shared/types"
+import { BONDS, CENTRAL, CENTS, HOUSE, INSTITUTIONS, MARKET, nextDraw, POT, toCents, type Config, type Economy } from "../shared/types"
+import { matureBonds } from "./bonds"
 import {
   BLACKJACK_TOP,
   brokeLine,
@@ -28,10 +29,10 @@ import {
   type Rand,
   type Side,
 } from "./games"
-import { held, loud, quiet, tooFast, type Ledger, type Message } from "./ledger"
+import { held, loud, quiet, schedule, tooFast, type Ledger, type Message } from "./ledger"
 import { money as currency } from "./money"
 import { answerDuel, deal, hasHand, offerDuel, owed, playHand } from "./tables"
-import { collectWealth, levy, payInterest, taxed } from "./taxes"
+import { collectWealth, levy, taxed } from "./taxes"
 
 const DAY = 24 * 60 * 60 * 1000
 /** The share of the central bank's reserves, in percent, that it adds to each lottery draw. */
@@ -50,17 +51,12 @@ export function setup(sql: SqlStorage) {
     );
     create table if not exists tickets (id text primary key, count integer not null);
     create table if not exists hands (user_id text primary key, stake integer not null, player text not null, dealer text not null, at integer not null);
+    create table if not exists bonds (id integer primary key autoincrement, user_id text not null, amount integer not null, rate real not null, matures integer not null);
   `)
   // Marked as bots, which keeps them off the leaderboard and stops anyone giving them coins by hand.
   for (const [id, name] of Object.entries(INSTITUTIONS)) {
     sql.exec("insert or ignore into accounts (id, name, bot, created_at) values (?, ?, 1, ?)", id, name, Date.now())
   }
-}
-
-/** The draw also settles the house and collects the wealth tax, so anything at the casino makes sure one is coming. */
-export async function schedule(ledger: Ledger) {
-  const next = nextDraw(Date.now())
-  if ((await ledger.storage.getAlarm()) !== next) await ledger.storage.setAlarm(next)
 }
 
 /** The next draw as Slack shows a time: in each reader's own time zone, with UTC for anything that can't. */
@@ -281,15 +277,6 @@ export async function play(ledger: Ledger, input: { sub: string; words: string[]
   })
 }
 
-/** How a game entry reads in `/bank history`, or null when the entry isn't one. */
-export function historyLine(row: { kind: string; from_id: string | null; to_id: string | null; note: string | null }, user: string, amount: string) {
-  if (row.kind === "bet") return `-${amount} on ${row.note === "lottery" ? "lottery tickets" : (row.note ?? "a bet")}`
-  if (row.kind === "payout") return `+${amount} won at ${row.note === "lottery" ? "the lottery" : (row.note ?? "the casino")}`
-  if (row.kind === "duel") return row.from_id === user ? `-${amount} lost a duel to <@${row.to_id}>` : `+${amount} won a duel against <@${row.from_id}>`
-  if (row.kind === "stimulus") return `+${amount} from the central bank`
-  return null
-}
-
 // ---------- the daily draw
 
 /**
@@ -319,9 +306,11 @@ export async function settle(ledger: Ledger) {
     if (refill > 0) ledger.move({ from: CENTRAL, to: HOUSE, amount: refill, kind: "stimulus", note: "house reserve" })
   }
 
-  const interest = payInterest(ledger)
-  if (interest && interest.paid > 0 && channel) {
-    await post(channel, `:classical_building: the central bank paid *${currency(config, interest.paid)}* in interest to ${interest.people} savers. money makes money.`).catch(quietly)
+  const matured = matureBonds(ledger)
+  if (matured && channel) {
+    const owners = matured.owners.slice(0, 10).map((id) => `<@${id}>`).join(", ")
+    const ending = matured.short ? "the central bank couldn't cover all the interest. a small sovereign default, nothing to see here." : "patience, rewarded. disgusting."
+    await post(channel, `:scroll: bonds matured: *${currency(config, matured.lent)}* back to ${owners} with *${currency(config, matured.paid)}* in interest. ${ending}`).catch(quietly)
   }
 
   const tickets = ledger.sql.exec<{ user: string; count: number }>("select id as user, count from tickets order by id").toArray()
@@ -342,7 +331,8 @@ export async function settle(ledger: Ledger) {
     await (channel ? post(channel, text).catch(() => post(winner, text)) : post(winner, text)).catch(quietly)
   }
 
-  if (config.taxes.wealth > 0 || config.taxes.interest > 0) await ledger.storage.setAlarm(nextDraw(Date.now()))
+  // Come back tomorrow by itself while there is a wealth tax to collect or a bond to pay back.
+  if (config.taxes.wealth > 0 || held(ledger, BONDS) > 0) await ledger.storage.setAlarm(nextDraw(Date.now()))
 }
 
 // ---------- the economy
@@ -357,6 +347,7 @@ export function economy(ledger: Ledger): Economy {
     pot: held(ledger, POT),
     central: held(ledger, CENTRAL),
     market: held(ledger, MARKET),
+    bonds: held(ledger, BONDS),
   }
 
   // An entry with no sender created coins and one with no recipient destroyed them. Everything else only moved them.
@@ -395,7 +386,8 @@ export function economy(ledger: Ledger): Economy {
       pot: coins(supply.pot),
       central: coins(supply.central),
       market: coins(supply.market),
-      total: coins(supply.people + supply.house + supply.pot + supply.central + supply.market),
+      bonds: coins(supply.bonds),
+      total: coins(supply.people + supply.house + supply.pot + supply.central + supply.market + supply.bonds),
     },
     members: active.length,
     growth: { week: coins(days[29]!.supply - days[22]!.supply), month: coins(days[29]!.supply - before) },

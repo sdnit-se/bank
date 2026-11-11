@@ -3,7 +3,7 @@
 //
 // Amounts are in cents, like the rest of the ledger.
 
-import type { Config, EntryKind } from "../shared/types"
+import { BONDS, nextDraw, type Config, type EntryKind } from "../shared/types"
 import type { Env } from "./env"
 import type { Rand } from "./games"
 
@@ -36,6 +36,36 @@ export function tooFast(ledger: Ledger, user: string, kinds: EntryKind[], most =
     .exec<{ n: number }>(`select count(*) as n from entries where actor = ? and at > ? and kind in (${kinds.map((kind) => `'${kind}'`).join(", ")})`, user, Date.now() - 60_000)
     .one().n
   return recent >= most
+}
+
+/** The daily round draws the lottery, settles the house, taxes wealth and pays back bonds. This makes sure one is coming. */
+export async function schedule(ledger: Ledger) {
+  const next = nextDraw(Date.now())
+  if ((await ledger.storage.getAlarm()) !== next) await ledger.storage.setAlarm(next)
+}
+
+/** How one of this fork's entries reads in `/bank history`, or null when the entry is one of upstream's. */
+export function historyLine(row: { kind: string; from_id: string | null; to_id: string | null; note: string | null }, user: string, amount: string) {
+  switch (row.kind) {
+    case "bet":
+      return `-${amount} on ${row.note === "lottery" ? "lottery tickets" : (row.note ?? "a bet")}`
+    case "payout":
+      return `+${amount} won at ${row.note === "lottery" ? "the lottery" : (row.note ?? "the casino")}`
+    case "duel":
+      return row.from_id === user ? `-${amount} lost a duel to <@${row.to_id}>` : `+${amount} won a duel against <@${row.from_id}>`
+    case "stimulus":
+      return `+${amount} from the central bank${row.note === "bond interest" ? ", interest on a bond" : ""}`
+    case "buy":
+      return `-${amount} into ${row.note ?? "the market"}`
+    case "sell":
+      return `+${amount} from selling ${row.note ?? "a position"}`
+    case "tax":
+      return row.from_id === user ? `-${amount} ${row.note ?? "tax"}` : null
+    case "bond":
+      return row.to_id === BONDS ? `-${amount} into a bond at ${row.note}` : `+${amount} back from a bond`
+    default:
+      return null
+  }
 }
 
 // ---------- what a command answers with

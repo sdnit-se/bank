@@ -23,7 +23,7 @@ export type Taxes = {
   /** Each week, of whatever someone holds above `wealthAbove`. */
   wealth: number
   wealthAbove: number
-  /** Not a tax: each week, what the central bank pays on whatever someone holds, out of its reserves. */
+  /** Not a tax: what the central bank pays on a one-week bond, out of its reserves. Zero means it sells none. */
   interest: number
 }
 
@@ -81,6 +81,7 @@ export type EntryKind =
   | "sell"
   | "tax"
   | "print"
+  | "bond"
 
 /**
  * The accounts that aren't people. They hold coins like anyone else, so games move coins around without creating or
@@ -90,11 +91,13 @@ export const HOUSE = "HOUSE"
 export const POT = "POT"
 export const CENTRAL = "CENTRAL"
 export const MARKET = "MARKET"
+export const BONDS = "BONDS"
 export const INSTITUTIONS: Record<string, string> = {
   [HOUSE]: "the house",
   [POT]: "the lottery pot",
   [CENTRAL]: "the central bank",
   [MARKET]: "the market",
+  [BONDS]: "the bond desk",
 }
 
 export type Entry = {
@@ -165,7 +168,7 @@ export type EconomyDay = {
 }
 
 export type Economy = {
-  supply: { people: number; house: number; pot: number; central: number; market: number; total: number }
+  supply: { people: number; house: number; pot: number; central: number; market: number; bonds: number; total: number }
   /** Taxes and fees paid to the central bank over the last 7 and 30 days. */
   taxes: { week: number; month: number }
   members: number
