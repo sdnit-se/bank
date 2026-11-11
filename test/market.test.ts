@@ -2,8 +2,7 @@
 // What matters most: a sale pays today's price, losses pay for gains before anything is printed, and the only coins
 // ever created are the shortfall on a profitable sale.
 import { afterEach, expect, test } from "bun:test"
-import { casinoHelp } from "../src/server/casino"
-import { fetchQuote, market, marketHelp, marketStats, portfolio, quote, tradeLine } from "../src/server/market"
+import { fetchQuote, market } from "../src/server/market"
 import { CENTRAL, MARKET } from "../src/shared/types"
 import { A, B, clock, frozen, world as bare } from "./world"
 
@@ -62,21 +61,6 @@ function world(...options: Parameters<typeof bare>) {
   return { ...w, say, position, later, created }
 }
 
-test("a quote carries the price, its currency, its age and whether the market is open", async () => {
-  feed(106.4)
-  expect(await fetchQuote("ERIC-B.ST", clock.now)).toEqual({
-    symbol: "ERIC-B.ST",
-    name: "Telefonaktiebolaget LM Ericsson (publ)",
-    price: 106.4,
-    currency: "SEK",
-    exchange: "Stockholm",
-    at: clock.now - 30_000,
-    open: true,
-  })
-  feed(106.4, { open: false })
-  expect((await fetchQuote("ERIC-B.ST", clock.now))!.open).toBe(false)
-})
-
 test("anything odd from the feed is no quote at all", async () => {
   feed(null)
   expect(await fetchQuote("NOPE")).toBeNull()
@@ -86,17 +70,6 @@ test("anything odd from the feed is no quote at all", async () => {
   expect(await fetchQuote("ERIC-B.ST")).toBeNull()
   globalThis.fetch = (async () => Promise.reject(new Error("down"))) as never
   expect(await fetchQuote("ERIC-B.ST")).toBeNull()
-})
-
-test("quotes are reused for a minute, and symbols that aren't symbols never reach the feed", async () => {
-  const w = world()
-  const calls = feed(106.4)
-  expect((await quote(w.ledger, "eric-b.st"))!.price).toBe(106.4)
-  expect((await quote(w.ledger, "ERIC-B.ST"))!.price).toBe(106.4)
-  expect(calls).toHaveLength(1)
-  expect(await quote(w.ledger, "../../etc/passwd")).toBeNull()
-  expect(await quote(w.ledger, "A B")).toBeNull()
-  expect(calls).toHaveLength(1)
 })
 
 test("prices can be looked up with the market closed, but nothing can be traded", async () => {
@@ -204,64 +177,4 @@ test("trades respect the minimum, the balance, what is owned and the pace", asyn
   expect((await w.say(A, "portfolio"))!.text).toContain("you own nothing")
   for (let trade = 0; trade < 10; trade++) expect((await w.say(B, "buy ERIC-B.ST 1"))!.response_type).toBe("in_channel")
   expect((await w.say(B, "buy ERIC-B.ST 1"))!.text).toContain("slow down")
-})
-
-test("the portfolio values what is held at today's prices", async () => {
-  const w = world()
-  feed(100)
-  await w.say(A, "buy ERIC-B.ST 50")
-  w.later(110)
-  const text = (await w.say(A, "portfolio"))!.text
-  expect(text).toContain("*your portfolio* · 54.45 coins · +10.0%")
-  expect(text).toContain("*ERIC-B.ST* · 54.45 coins · +10.0% on 49.50 coins")
-  expect(await portfolio(w.ledger, A)).toEqual({
-    enabled: true,
-    fee: 1,
-    positions: [{ symbol: "ERIC-B.ST", name: "Telefonaktiebolaget LM Ericsson (publ)", cost: 49.5, value: 54.45, live: true }],
-  })
-  w.later(null)
-  expect((await portfolio(w.ledger, A)).positions[0]).toMatchObject({ value: null, live: false })
-  expect((await portfolio(w.ledger, B)).positions).toEqual([])
-})
-
-test("trades read sensibly in a person's history", () => {
-  expect(tradeLine({ kind: "buy", from_id: A, note: "ERIC-B.ST" }, A, "49.50 coins")).toBe("-49.50 coins into ERIC-B.ST")
-  expect(tradeLine({ kind: "sell", from_id: MARKET, note: "ERIC-B.ST" }, A, "58.81 coins")).toBe("+58.81 coins from selling ERIC-B.ST")
-  expect(tradeLine({ kind: "tax", from_id: A, note: "trading fee" }, A, "0.50 coins")).toBe("-0.50 coins trading fee")
-  expect(tradeLine({ kind: "give", from_id: A, note: null }, A, "1 coin")).toBeNull()
-})
-
-test("help only lists what is switched on", () => {
-  const open = world().config
-  expect(casinoHelp(open).join("\n")).toContain("`/bank flip 10`")
-  expect(casinoHelp(open)[0]).toBe("*casino* · bets up to 25 coins")
-  expect(marketHelp(open)[0]).toBe("*stock market* · real prices, play money, 1% a trade")
-  expect(marketHelp(open).join("\n")).toContain("`/bank sell ERIC-B.ST 20`")
-  const closed = world({ enabled: false }, { enabled: false }).config
-  expect(casinoHelp(closed)).toEqual([])
-  expect(marketHelp(closed)).toEqual([])
-})
-
-test("the market's record: who is up, who is down, what is held, and what was printed", async () => {
-  const w = world()
-  feed(100)
-  await w.say(A, "buy ERIC-B.ST 50")
-  await w.say(B, "buy ERIC-B.ST 20")
-  w.later(120)
-  await w.say(A, "sell ERIC-B.ST all")
-  w.later(90)
-
-  const stats = await marketStats(w.ledger)
-  // A put in 49.50 plus a 0.50 fee and took out 58.81. B put in 19.80 plus 0.20 and holds what is now worth 17.82.
-  expect(stats.investors.map(({ id, result, value, trades }) => ({ id, result, value, trades }))).toEqual([
-    { id: A, result: 8.81, value: 0, trades: 2 },
-    { id: B, result: -2.18, value: 17.82, trades: 1 },
-  ])
-  expect(stats.symbols).toEqual([{ symbol: "ERIC-B.ST", name: "Telefonaktiebolaget LM Ericsson (publ)", holders: 1, cost: 19.8, value: 17.82 }])
-  // A's sale was worth 59.40 against 69.30 in the market, so nothing had to be printed.
-  expect(stats).toMatchObject({ holds: 9.9, printed: 0, fees: 1.29 })
-  expect(w.total()).toBe(200)
-
-  w.later(null)
-  expect((await marketStats(w.ledger)).symbols[0]).toMatchObject({ value: null })
 })

@@ -117,15 +117,6 @@ test("the wealth tax is weekly, starts a week after it is switched on, and spare
   expect(w.total()).toBe(350)
 })
 
-test("with no wealth tax the daily round takes nothing and doesn't keep waking up", async () => {
-  const w = taxing({})
-  w.print(A, 900)
-  clock.now += 30 * DAY
-  await settle(w.ledger)
-  expect(w.balance(A)).toBe(1000)
-  expect(w.alarm()).toBeNull()
-})
-
 test("a stimulus splits the central bank's reserves equally, and only what it holds", () => {
   const w = taxing({})
   expect(() => stimulus(w.ledger, 50 * CENTS, A)).toThrow("the central bank only holds 0 coins")

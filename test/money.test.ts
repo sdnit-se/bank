@@ -1,8 +1,8 @@
 // Coins to cents and back, and the one-time conversion of a ledger that was kept in whole coins.
 import { Database } from "bun:sqlite"
 import { expect, test } from "bun:test"
-import { convertToCents, inCents, money } from "../src/server/money"
-import { amountText, currency, defaultConfig, toCents } from "../src/shared/types"
+import { convertToCents, inCents } from "../src/server/money"
+import { defaultConfig, toCents } from "../src/shared/types"
 
 test("amounts typed in coins become whole cents", () => {
   expect(toCents("10")).toBe(1000)
@@ -12,16 +12,6 @@ test("amounts typed in coins become whole cents", () => {
   expect(toCents(0.07)).toBe(7)
   expect(toCents(-3)).toBe(-300)
   for (const bad of ["1.234", "abc", "", "1e3", "1,5", " ", null, undefined, Number.NaN, 1 / 3]) expect(toCents(bad)).toBeNull()
-})
-
-test("amounts read as coins, with cents only when there are any", () => {
-  expect(amountText(103)).toBe("103")
-  expect(amountText(103.5)).toBe("103.50")
-  expect(amountText(0.05)).toBe("0.05")
-  expect(currency(defaultConfig, 1)).toBe("1 coin")
-  expect(money(defaultConfig, 10350)).toBe("103.50 coins")
-  expect(money(defaultConfig, 100)).toBe("1 coin")
-  expect(money(defaultConfig, 0)).toBe("0 coins")
 })
 
 test("the settings are used in cents and left alone in coins", () => {

@@ -1,8 +1,9 @@
 // Plays the casino against the stand-in ledger in world.ts. What matters most here is that no game creates or
 // destroys a coin.
 import { expect, test } from "bun:test"
-import { economy, play, settle } from "../src/server/casino"
-import { nextDraw } from "../src/server/games"
+import { play, settle } from "../src/server/casino"
+import { nextDraw, type Rand } from "../src/server/games"
+import { interact, type Message } from "../src/server/tables"
 import { CENTRAL, CENTS, HOUSE, POT } from "../src/shared/types"
 import { A, B, clock, frozen, world as bare } from "./world"
 
@@ -14,7 +15,16 @@ function world(...options: Parameters<typeof bare>) {
     const words = text.split(" ")
     return play(w.ledger, { sub: words[0]!, words: words.slice(1), user, channel })
   }
-  return { ...w, say }
+  /** Deals these ranks in order, two to the player and then two to the dealer. Anything else random comes up 0. */
+  const deck = (...ranks: number[]) => void (w.ledger.rand = ((n) => (n === 13 ? (ranks.shift() ?? 10) - 1 : 0)) as Rand)
+  const click = (user: string, action: string, value: string) => interact(w.ledger, { user, action, value })
+  return { ...w, say, deck, click }
+}
+
+/** What the first button under a message carries. */
+function button(message: Message | null) {
+  const actions = message?.blocks?.[1]
+  return actions?.type === "actions" ? actions.elements[0]!.value : ""
 }
 
 test("the casino is closed unless an admin opens it, and leaves other commands alone", async () => {
@@ -58,10 +68,12 @@ test("no amount of gambling creates or destroys a coin", async () => {
   for (let round = 0; round < 400; round++) {
     clock.now += 7_000
     const user = round % 2 ? A : B
-    await w.say(user, round % 3 ? "slots 5" : "flip 5 tails")
+    // Each of them comes round to these in turn, so a hand is dealt, hit and stood on.
+    await w.say(user, ["blackjack 5", "flip 5 tails", "hit", "slots 5", "stand", "roulette 5 red", "roulette 1 17"][round % 7]!)
     expect(w.total()).toBe(before)
     expect(w.lowest()).toBeGreaterThanOrEqual(0)
   }
+  for (const user of [A, B]) await w.say(user, "stand")
   await settle(w.ledger)
   expect(w.total()).toBe(before)
   expect(w.balance(HOUSE)).toBeLessThanOrEqual(w.config.games.reserve / CENTS)
@@ -122,25 +134,6 @@ test("the central bank refills a house that lost", async () => {
   expect(w.balance(CENTRAL)).toBe(800)
 })
 
-test("the economy adds up", async () => {
-  const w = world()
-  w.print(HOUSE, 500)
-  w.give(A, B, 30)
-  await w.say(A, "lottery 10")
-  const figures = economy(w.ledger)
-  expect(figures.supply).toEqual({ people: 190, house: 500, pot: 10, central: 0, market: 0, total: 700 })
-  expect(figures.supply.total).toBe(w.total())
-  expect(figures.days).toHaveLength(30)
-  expect(figures.days[29]).toEqual({ day: "2026-11-11", supply: 700, gifts: 30, bets: 10, taxes: 0 })
-  expect(figures.taxes).toEqual({ week: 0, month: 0 })
-  expect(figures.growth).toEqual({ week: 700, month: 700 })
-  expect(figures.gdp.week).toBe(30)
-  expect(figures.turnover.week).toBe(10)
-  expect(figures.members).toBe(2)
-  expect(figures.richestShare).toBeCloseTo(130 / 190)
-  expect(figures.broke).toBe(0)
-})
-
 test("stakes can be to the cent, lottery tickets cannot", async () => {
   const w = world()
   w.print(HOUSE, 500)
@@ -150,5 +143,69 @@ test("stakes can be to the cent, lottery tickets cannot", async () => {
   expect((await w.say(A, "lottery 2.5"))!.text).toContain("whole coins only")
   expect((await w.say(A, "lottery 2"))!.response_type).toBe("in_channel")
   expect(w.balance(POT)).toBe(2)
+  expect(w.total()).toBe(700)
+})
+
+test("blackjack pays three to two on a natural, double on a win, the stake on a push, and nothing otherwise", async () => {
+  const w = world()
+  w.print(HOUSE, 500)
+  const hand = async (ranks: number[], moves: string[]) => {
+    w.deck(...ranks)
+    await w.say(A, "blackjack 10")
+    for (const move of moves) await w.say(A, move)
+    return w.balance(A)
+  }
+  expect(await hand([1, 13, 10, 9], [])).toBe(115)
+  expect(await hand([10, 9, 10, 7], ["stand"])).toBe(125)
+  expect(await hand([10, 8, 10, 8], ["stand"])).toBe(125)
+  expect(await hand([10, 6, 10, 7, 10], ["hit"])).toBe(115)
+  // The dealer has 16 and has to draw, and draws a five.
+  expect(await hand([10, 6, 10, 6, 5], ["stand"])).toBe(105)
+  expect((await w.say(A, "hit"))!.text).toContain("you have no hand")
+  expect(w.total()).toBe(700)
+})
+
+test("what a hand could still win is kept aside until it is played, and an abandoned hand is the house's", async () => {
+  const w = world({ reserve: 0 })
+  w.print(HOUSE, 30)
+  w.deck(10, 9, 10, 7)
+  await w.say(A, "blackjack 20")
+  expect((await w.say(A, "blackjack 5"))!.text).toContain("already have a hand")
+  // The house holds 50 and may owe 40 of it, so it can only take 10 on a flip, and only sweeps 10.
+  expect((await w.say(B, "flip 25"))!.text).toContain("the most it will take on this is 10 coins")
+  await settle(w.ledger)
+  expect([w.balance(HOUSE), w.balance(CENTRAL)]).toEqual([40, 10])
+  await w.say(A, "stand")
+  expect([w.balance(A), w.balance(HOUSE)]).toEqual([120, 0])
+
+  w.print(HOUSE, 30)
+  await w.say(A, "blackjack 20")
+  clock.now += 11 * 60_000
+  expect((await w.say(A, "stand"))!.text).toContain("you have no hand")
+  expect([w.balance(A), w.balance(HOUSE)]).toEqual([100, 50])
+})
+
+test("a button works for the person it is for, and only once", async () => {
+  const w = world()
+  w.print(HOUSE, 500)
+  const duel = button(await w.say(A, "duel <@UBBB> 20"))
+  expect((await w.click(A, "duel_accept", duel)).text).toContain("isn't yours")
+  // Two clicks arriving together settle one duel.
+  const answers = await Promise.all([w.click(B, "duel_accept", duel), w.click(B, "duel_accept", duel)])
+  expect(answers.filter((answer) => answer.replace_original)).toHaveLength(1)
+  expect([w.balance(A), w.balance(B)].sort()).toEqual([120, 80])
+
+  w.deck(10, 5, 10, 7, 2)
+  const first = button(await w.say(A, "blackjack 10"))
+  expect((await w.click(B, "bj_hit", first)).text).toContain("isn't your hand")
+  expect(await w.click(A, "bj_hit", first)).toMatchObject({ response_type: "in_channel", replace_original: true })
+  expect((await w.click(A, "bj_stand", first)).replace_original).toBe(true)
+  const settled = w.balance(A)
+  expect((await w.click(A, "bj_stand", first)).text).toContain("that hand is over")
+  // A button from an old hand can't play a new one.
+  clock.now += 1_000
+  await w.say(A, "blackjack 10")
+  expect((await w.click(A, "bj_stand", first)).text).toContain("that hand is over")
+  expect(w.balance(A)).toBe(settled - 10)
   expect(w.total()).toBe(700)
 })

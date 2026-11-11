@@ -195,6 +195,32 @@ async function command(request: Request, env: Env, ctx: ExecutionContext) {
   return json(message)
 }
 
+/** A button under a message. Slack wants an answer at once, so the result goes to the address it gave. */
+async function interactions(request: Request, env: Env, ctx: ExecutionContext) {
+  const body = await verified(request, env.SLACK_SIGNING_SECRET)
+  if (body === null) return new Response("bad signature", { status: 401 })
+  const payload = JSON.parse(new URLSearchParams(body).get("payload") ?? "{}") as {
+    type?: string
+    team?: { id: string }
+    user?: { id: string }
+    response_url?: string
+    actions?: { action_id: string; value?: string }[]
+  }
+  const action = payload.actions?.[0]
+  const url = payload.response_url
+  if (payload.type === "block_actions" && payload.team && payload.user && action && url?.startsWith("https://hooks.slack.com/")) {
+    ctx.waitUntil(
+      workspace(env, payload.team.id)
+        .interaction({ user: payload.user.id, action: action.action_id, value: action.value ?? "" })
+        .then((message) =>
+          fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ replace_original: false, ...message }) }),
+        )
+        .catch((error: unknown) => console.error("interaction failed", error)),
+    )
+  }
+  return new Response(null, { status: 200 })
+}
+
 async function events(request: Request, env: Env, ctx: ExecutionContext) {
   const body = await verified(request, env.SLACK_SIGNING_SECRET)
   if (body === null) return new Response("bad signature", { status: 401 })
@@ -317,6 +343,7 @@ async function handle(request: Request, env: Env, ctx: ExecutionContext): Promis
       if (path === "/logout") return redirect(`${BASE}/`, { "set-cookie": cookie(SESSION, "", 0) })
       if (path === "/slack/commands" && request.method === "POST") return await command(request, env, ctx)
       if (path === "/slack/events" && request.method === "POST") return await events(request, env, ctx)
+      if (path === "/slack/interactions" && request.method === "POST") return await interactions(request, env, ctx)
       if (path.startsWith("/api/")) return json(await api(request, env, path.slice(4)))
       return await asset(request, env, path)
     } catch (error) {

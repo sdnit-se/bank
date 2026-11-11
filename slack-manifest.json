@@ -20,7 +20,7 @@
         "command": "/bank",
         "url": "https://labs.shebang.se/bank/slack/commands",
         "description": "Give coins, or see what else Bank does",
-        "usage_hint": "give @someone 10 for the fix \u00b7 history \u00b7 casino \u00b7 portfolio \u00b7 help",
+        "usage_hint": "give @someone 10 for the fix · history · casino · portfolio · help",
         "should_escape": true
       },
       {
@@ -39,13 +39,27 @@
         "command": "/bank-flip",
         "url": "https://labs.shebang.se/bank/slack/commands",
         "description": "Double or nothing against the house",
-        "usage_hint": "10 \u00b7 10 tails",
+        "usage_hint": "10 · 10 tails",
         "should_escape": true
       },
       {
         "command": "/bank-slots",
         "url": "https://labs.shebang.se/bank/slack/commands",
         "description": "Three reels, up to 20 times your stake",
+        "usage_hint": "10",
+        "should_escape": true
+      },
+      {
+        "command": "/bank-roulette",
+        "url": "https://labs.shebang.se/bank/slack/commands",
+        "description": "Red, black, odd, even, or a number from 0 to 36",
+        "usage_hint": "10 red",
+        "should_escape": true
+      },
+      {
+        "command": "/bank-blackjack",
+        "url": "https://labs.shebang.se/bank/slack/commands",
+        "description": "Beat the dealer to 21",
         "usage_hint": "10",
         "should_escape": true
       },
@@ -74,7 +88,7 @@
         "command": "/bank-sell",
         "url": "https://labs.shebang.se/bank/slack/commands",
         "description": "Take coins out at today's price",
-        "usage_hint": "ERIC-B.ST 20 \u00b7 ERIC-B.ST all",
+        "usage_hint": "ERIC-B.ST 20 · ERIC-B.ST all",
         "should_escape": true
       },
       {
@@ -87,7 +101,7 @@
         "command": "/bank-price",
         "url": "https://labs.shebang.se/bank/slack/commands",
         "description": "Look a price up",
-        "usage_hint": "ERIC-B.ST \u00b7 AAPL \u00b7 BTC-USD",
+        "usage_hint": "ERIC-B.ST · AAPL · BTC-USD",
         "should_escape": true
       }
     ]
@@ -129,6 +143,10 @@
     },
     "org_deploy_enabled": false,
     "socket_mode_enabled": false,
-    "token_rotation_enabled": false
+    "token_rotation_enabled": false,
+    "interactivity": {
+      "is_enabled": true,
+      "request_url": "https://labs.shebang.se/bank/slack/interactions"
+    }
   }
 }

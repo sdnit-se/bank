@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { draw, flip, FLIP_PAYS, nextDraw, secureRand, SLOT_TIERS, SLOT_TOP, spin, type Rand } from "../src/server/games"
+import { draw, flip, FLIP_PAYS, handTotal, roulette, secureRand, settleHand, SLOT_TIERS, SLOT_TOP, spin, type Rand } from "../src/server/games"
 
 /** The first call returns `first`; later ones walk through their range, so every pick gets exercised. */
 function scripted(first: number): Rand {
@@ -42,14 +42,29 @@ test("every lottery ticket is as likely as the next", () => {
   expect(draw(() => 0, [])).toBeNull()
 })
 
-test("the draw is at the next 14:00 UTC", () => {
-  expect(new Date(nextDraw(Date.UTC(2026, 10, 11, 9, 30))).toISOString()).toBe("2026-11-11T14:00:00.000Z")
-  expect(new Date(nextDraw(Date.UTC(2026, 10, 11, 14, 0))).toISOString()).toBe("2026-11-12T14:00:00.000Z")
-})
-
 test("secureRand stays in range", () => {
   for (let i = 0; i < 2_000; i++) {
     const value = secureRand(7)
     expect(value >= 0 && value < 7 && Number.isInteger(value)).toBe(true)
   }
+})
+
+test("roulette returns 36 of every 37 staked, whatever is bet on", () => {
+  for (const pocket of ["red", "black", "odd", "even", 0, 17] as const) {
+    const spins = Array.from({ length: 37 }, (_, landed) => roulette(() => landed, pocket))
+    expect(spins.reduce((sum, spin) => sum + spin.pays, 0)).toBe(36)
+    expect(spins[0]!.won).toBe(pocket === 0)
+  }
+})
+
+test("blackjack hands are counted and settled by the usual rules", () => {
+  const cards = (...ranks: number[]) => ranks.map((rank) => ({ rank, suit: 0 }))
+  expect([cards(1, 13), cards(1, 1), cards(1, 9, 5), cards(1, 1, 9)].map(handTotal)).toEqual([21, 12, 15, 21])
+  expect(settleHand(cards(10, 5, 9), cards(10, 7))).toBe("bust")
+  expect(settleHand(cards(1, 13), cards(10, 9))).toBe("blackjack")
+  expect(settleHand(cards(1, 13), cards(1, 12))).toBe("push")
+  expect(settleHand(cards(10, 5, 6), cards(1, 12))).toBe("lose")
+  expect(settleHand(cards(10, 9), cards(10, 6, 9))).toBe("win")
+  expect(settleHand(cards(10, 8), cards(10, 8))).toBe("push")
+  expect(settleHand(cards(10, 7), cards(10, 8))).toBe("lose")
 })

@@ -24,6 +24,7 @@ import { importHistory } from "./migrate"
 import { convertToCents, inCents, money as currency } from "./money"
 import { slack, SlackError } from "./slack"
 import { casinoStats, sources } from "./stats"
+import { interact, type Message } from "./tables"
 import { levy, stimulus } from "./taxes"
 
 export type Install = {
@@ -97,7 +98,7 @@ type Move =
   | { ok: true; id: number; from: number | null; to: number | null }
   | { ok: false; reason: "insufficient" | "unknown"; balance: number }
 
-export type SlackMessage = { response_type: "ephemeral" | "in_channel"; text: string }
+export type SlackMessage = Message
 
 type ReactionEvent = {
   type: "reaction_added" | "reaction_removed"
@@ -208,6 +209,11 @@ export class Workspace extends DurableObject<Env> {
       setMeta: (key, value) => this.setMeta(key, value),
       call: (method, params) => this.call(method, params),
     }
+  }
+
+  /** A click on a button under one of the casino's messages. */
+  async interaction(input: { user: string; action: string; value: string }): Promise<SlackMessage> {
+    return interact(this.ledger(), input)
   }
 
   /** The daily lottery draw. */

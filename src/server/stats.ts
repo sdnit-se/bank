@@ -43,15 +43,24 @@ export function casinoStats(ledger: Ledger): CasinoStats {
   )
   const who = (id: string): Gambler => faces.get(id) ?? { id, name: id, image: null }
 
-  // Every stake against the house, with the payout that followed it if it won. The two are written back to back.
-  const plays = ledger.sql
-    .exec<{ at: number; actor: string; game: string; stake: number; paid: number | null }>(
-      `select b.at, b.actor, b.note as game, b.amount as stake, p.amount as paid
-        from entries b left join entries p on p.id = b.id + 1 and p.kind = 'payout' and p.actor = b.actor and p.note = b.note
-        where b.kind = 'bet' and b.to_id = ?1 and b.actor is not null order by b.id`,
-      HOUSE,
-    )
-    .toArray()
+  // Every stake against the house, with what it paid: the next payout to the same person at the same game. That is
+  // the very next entry for most games, and comes when the hand is over in blackjack.
+  const plays: { at: number; actor: string; game: string; stake: number; paid: number }[] = []
+  const unpaid = new Map<string, (typeof plays)[number]>()
+  const moves = ledger.sql.exec<{ at: number; kind: string; actor: string; game: string; amount: number }>(
+    "select at, kind, actor, note as game, amount from entries where actor is not null and ((kind = 'bet' and to_id = ?1) or (kind = 'payout' and from_id = ?1)) order by id",
+    HOUSE,
+  )
+  for (const move of moves.toArray()) {
+    const key = `${move.actor} ${move.game}`
+    if (move.kind === "bet") {
+      plays.push({ at: move.at, actor: move.actor, game: move.game, stake: move.amount, paid: 0 })
+      unpaid.set(key, plays.at(-1)!)
+    } else if (unpaid.has(key)) {
+      unpaid.get(key)!.paid = move.amount
+      unpaid.delete(key)
+    }
+  }
   const tickets = ledger.sql
     .exec<{ actor: string; plays: number; staked: number }>(
       "select actor, count(*) as plays, sum(amount) as staked from entries where kind = 'bet' and to_id = ? and actor is not null group by actor",
@@ -75,20 +84,20 @@ export function casinoStats(ledger: Ledger): CasinoStats {
   let jackpots = 0
   for (const play of plays) {
     const person = of(play.actor)
-    const paid = play.paid ?? 0
+    const paid = play.paid
     person.bets++
     person.staked += play.stake
     person.net += paid - play.stake
     // A streak is plays in a row that returned nothing.
     person.run = paid > 0 ? 0 : person.run + 1
     person.streak = Math.max(person.streak, person.run)
-    if (paid > 0) person.wins++
+    if (paid > play.stake) person.wins++
     const row = game(play.game)
     row.plays++
     row.staked += play.stake
     row.paid += paid
-    if (paid > 0) row.wins++
-    if (paid - play.stake > (biggest ? (biggest.paid ?? 0) - biggest.stake : 0)) biggest = play
+    if (paid > play.stake) row.wins++
+    if (paid - play.stake > (biggest ? biggest.paid - biggest.stake : 0)) biggest = play
     if (play.game === "slots" && paid === play.stake * 20) jackpots++
   }
   for (const row of tickets) {
@@ -122,11 +131,11 @@ export function casinoStats(ledger: Ledger): CasinoStats {
     row.wins++
   }
 
-  const house = plays.reduce((sum, play) => sum + play.stake - (play.paid ?? 0), 0)
+  const house = plays.reduce((sum, play) => sum + play.stake - play.paid, 0)
   const today = Math.floor(Date.now() / DAY)
   const first = today - 29
   const byDay = new Map<number, number>()
-  for (const play of plays) byDay.set(Math.floor(play.at / DAY), (byDay.get(Math.floor(play.at / DAY)) ?? 0) + play.stake - (play.paid ?? 0))
+  for (const play of plays) byDay.set(Math.floor(play.at / DAY), (byDay.get(Math.floor(play.at / DAY)) ?? 0) + play.stake - play.paid)
   let running = [...byDay].filter(([day]) => day < first).reduce((sum, [, profit]) => sum + profit, 0)
   const days = Array.from({ length: 30 }, (_, index) => {
     running += byDay.get(first + index) ?? 0
@@ -155,7 +164,7 @@ export function casinoStats(ledger: Ledger): CasinoStats {
   const sold = ledger.sql.exec<{ n: number | null }>("select sum(count) as n from tickets").one().n ?? 0
   const gifts =
     ledger.sql.exec<{ n: number | null }>("select sum(case when kind = 'refund' then -amount else amount end) as n from entries where kind in ('give', 'reaction', 'refund')").one().n ?? 0
-  const order = ["flip", "slots", "lottery", "duel"]
+  const order = ["flip", "slots", "roulette", "blackjack", "lottery", "duel"]
   return {
     staked: coins([...games.values()].reduce((sum, row) => sum + row.staked, 0)),
     bets: [...games.values()].reduce((sum, row) => sum + row.plays, 0),
@@ -169,7 +178,7 @@ export function casinoStats(ledger: Ledger): CasinoStats {
     people: [...tally]
       .map(([id, row]) => ({ ...who(id), net: coins(row.net), staked: coins(row.staked), bets: row.bets, wins: row.wins, streak: row.streak }))
       .sort((a, b) => b.net - a.net || a.name.localeCompare(b.name)),
-    biggestWin: biggest ? { ...who(biggest.actor), game: biggest.game, stake: coins(biggest.stake), paid: coins(biggest.paid ?? 0), at: biggest.at } : null,
+    biggestWin: biggest ? { ...who(biggest.actor), game: biggest.game, stake: coins(biggest.stake), paid: coins(biggest.paid), at: biggest.at } : null,
     jackpots,
     draws: draws.map((draw) => ({ at: draw.at, pot: coins(draw.amount), winner: who(draw.to_id) })),
     potHours,

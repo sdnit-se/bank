@@ -12,31 +12,34 @@ import type { Env } from "./env"
 import { money as currency } from "./money"
 import { collectWealth, levy, taxed } from "./taxes"
 import {
+  BLACKJACK_TOP,
   brokeLine,
   draw,
   drawLine,
-  duelDeclinedLine,
-  duelDoneLine,
   duelOpenLine,
   flip,
   FLIP_PAYS,
   flipLine,
   nextDraw,
+  parsePocket,
+  roulette,
+  rouletteLine,
+  roulettePays,
   secureRand,
   SLOT_TOP,
   slotLine,
   spin,
   ticketLine,
+  type Rand,
   type Side,
 } from "./games"
+import { answerDuel, deal, DUEL_LASTS, duelOffer, hasHand, owed, playHand, type Message } from "./tables"
 
 type Row = { id: string; name: string; balance: number; bot: number; gone: number }
 
 type Moved =
   | { ok: true; id: number; from: number | null; to: number | null }
   | { ok: false; reason: "insufficient" | "unknown"; balance: number }
-
-type Message = { response_type: "ephemeral" | "in_channel"; text: string }
 
 /** What the Workspace lends the casino: its tables, its one way of moving coins, and Slack. */
 export type Ledger = {
@@ -50,11 +53,12 @@ export type Ledger = {
   meta<T>(key: string): T | null
   setMeta(key: string, value: unknown): void
   call<T = Record<string, unknown>>(method: string, params?: Record<string, unknown>): Promise<T>
+  /** Decides how the games come out. Only tests set it; everything else gets real randomness. */
+  rand?: Rand
 }
 
 const MINUTE = 60_000
 const DAY = 24 * 60 * MINUTE
-const DUEL_LASTS = 10 * MINUTE
 const BETS_A_MINUTE = 10
 /** The share of the central bank's reserves, in percent, that it adds to each lottery draw. */
 const LOTTERY_SHARE = 10
@@ -66,7 +70,10 @@ function drawTime(now = Date.now()) {
   const at = nextDraw(now)
   return `<!date^${Math.floor(at / 1000)}^{date_short_pretty} at {time}|${new Date(at).toISOString().slice(11, 16)} UTC>`
 }
-const COMMANDS = new Set(["flip", "slots", "slot", "spin", "duel", "accept", "decline", "lottery", "lotto", "casino", "house"])
+const COMMANDS = new Set([
+  ...["flip", "slots", "slot", "spin", "roulette", "blackjack", "bj", "hit", "stand"],
+  ...["duel", "accept", "decline", "lottery", "lotto", "casino", "house"],
+])
 
 export function setup(sql: SqlStorage) {
   sql.exec(`
@@ -78,6 +85,7 @@ export function setup(sql: SqlStorage) {
       at integer not null
     );
     create table if not exists tickets (id text primary key, count integer not null);
+    create table if not exists hands (user_id text primary key, stake integer not null, player text not null, dealer text not null, at integer not null);
   `)
   // Marked as bots, which keeps them off the leaderboard and stops anyone giving them coins by hand.
   for (const [id, name] of Object.entries(INSTITUTIONS)) {
@@ -103,6 +111,8 @@ export function casinoHelp(config: Config) {
     `*casino* · bets up to ${currency(config, config.games.maxBet)}`,
     `\`/bank flip 10\` · double or nothing, heads unless you say tails`,
     `\`/bank slots 10\` · three reels, up to ${SLOT_TOP} times your stake`,
+    `\`/bank roulette 10 red\` · red, black, odd or even doubles it. a number from 0 to 36 pays 36 times`,
+    `\`/bank blackjack 10\` · beat the dealer to 21, then \`/bank hit\` or \`/bank stand\`. walk away for ten minutes and the house keeps it`,
     `\`/bank duel @someone 10\` · a coin flip between you. they \`/bank accept\` or \`/bank decline\``,
     `\`/bank lottery 5\` · five tickets for the daily draw. the next one is ${drawTime()}`,
     `\`/bank casino\` · what the house and the pot hold`,
@@ -121,6 +131,7 @@ export async function play(
 
   const coins = (amount: number) => currency(config, amount)
   const me = `<@${input.user}>`
+  const rand = ledger.rand ?? secureRand
   const word = input.words.find((word) => /^\d+(\.\d{1,2})?$/.test(word))
   const amount = word ? (toCents(word) ?? 0) : 0
 
@@ -142,9 +153,9 @@ export async function play(
     return null
   }
 
-  /** The house only takes a bet it could pay out in full, whatever happens. */
+  /** The house only takes a bet it could pay out in full, whatever happens, on top of the hands already being played. */
   const tooRich = (top: number) => {
-    const house = held(ledger, HOUSE)
+    const house = Math.max(0, held(ledger, HOUSE) - owed(ledger))
     const most = Math.min(config.games.maxBet, Math.floor(house / (top - 1)))
     if (amount <= most) return null
     if (most <= 0) return "the house is broke. somebody actually broke the bank. an admin has to top it up before anyone plays."
@@ -168,7 +179,7 @@ export async function play(
     const call: Side = input.words.some((word) => /^t(ails)?$/i.test(word)) ? "tails" : "heads"
     const staked = ledger.move({ from: input.user, to: HOUSE, amount, kind: "bet", note: "flip", actor: input.user })
     if (!staked.ok) return quiet("something went wrong, try again")
-    const result = flip(secureRand, call)
+    const result = flip(rand, call)
     if (result.won) ledger.move({ from: HOUSE, to: input.user, amount: amount * FLIP_PAYS, kind: "payout", note: "flip", actor: input.user })
     const tax = result.won ? levy(ledger, { from: input.user, amount: amount * (FLIP_PAYS - 1), rate: config.taxes.winnings, note: "winnings tax" }) : 0
     await schedule(ledger)
@@ -180,13 +191,43 @@ export async function play(
     if (problem) return quiet(problem)
     const staked = ledger.move({ from: input.user, to: HOUSE, amount, kind: "bet", note: "slots", actor: input.user })
     if (!staked.ok) return quiet("something went wrong, try again")
-    const result = spin(secureRand)
+    const result = spin(rand)
     const win = amount * result.pays
     if (win > 0) ledger.move({ from: HOUSE, to: input.user, amount: win, kind: "payout", note: "slots", actor: input.user })
     const tax = levy(ledger, { from: input.user, amount: win - amount, rate: config.taxes.winnings, note: "winnings tax" })
     await schedule(ledger)
     return loud(slotLine(secureRand, result, { user: me, amount: coins(amount), win: coins(win) }) + taxed(config, tax))
   }
+
+  if (input.sub === "roulette") {
+    const usage = "say how much and on what: `/bank roulette 10 red`. red, black, odd, even, or a number from 0 to 36."
+    // The first number is the stake, so a second one is the pocket.
+    const stake = word ? input.words.indexOf(word) : -1
+    const pocket = parsePocket(input.words.find((_, index) => index !== stake))
+    const problem = (await refuse(usage)) ?? (pocket === null ? usage : tooRich(roulettePays(pocket)))
+    if (problem || pocket === null) return quiet(problem ?? usage)
+    const staked = ledger.move({ from: input.user, to: HOUSE, amount, kind: "bet", note: "roulette", actor: input.user })
+    if (!staked.ok) return quiet("something went wrong, try again")
+    const result = roulette(rand, pocket)
+    const win = amount * result.pays
+    if (win > 0) ledger.move({ from: HOUSE, to: input.user, amount: win, kind: "payout", note: "roulette", actor: input.user })
+    const tax = levy(ledger, { from: input.user, amount: win - amount, rate: config.taxes.winnings, note: "winnings tax" })
+    await schedule(ledger)
+    return loud(rouletteLine(secureRand, result, { user: me, amount: coins(amount), win: coins(win), pocket: String(pocket) }) + taxed(config, tax))
+  }
+
+  if (input.sub === "blackjack" || input.sub === "bj") {
+    const problem = await refuse("say how much: `/bank blackjack 10`")
+    if (problem) return quiet(problem)
+    if (hasHand(ledger, input.user)) return quiet("you already have a hand on the table. `/bank hit` or `/bank stand`.")
+    const short = tooRich(BLACKJACK_TOP)
+    if (short) return quiet(short)
+    const dealt = deal(ledger, input.user, amount)
+    await schedule(ledger)
+    return dealt
+  }
+
+  if (input.sub === "hit" || input.sub === "stand") return playHand(ledger, input.user, input.sub)
 
   if (input.sub === "duel") {
     const to = input.words.find((word) => MENTION.test(word))?.match(MENTION)![1]
@@ -198,37 +239,11 @@ export async function play(
     if (!opponent || opponent.bot || opponent.gone) return quiet("they can't play. pick on someone who exists.")
     ledger.sql.exec("delete from duels where (from_id = ?1 and to_id = ?2) or at < ?3", input.user, to, Date.now() - DUEL_LASTS)
     ledger.sql.exec("insert into duels (from_id, to_id, amount, at) values (?, ?, ?, ?)", input.user, to, amount, Date.now())
-    return loud(duelOpenLine(secureRand, { from: me, to: `<@${to}>`, amount: coins(amount) }))
+    const id = ledger.sql.exec<{ id: number }>("select max(id) as id from duels where from_id = ? and to_id = ?", input.user, to).one().id
+    return duelOffer(loud(duelOpenLine(secureRand, { from: me, to: `<@${to}>`, amount: coins(amount) })), id)
   }
 
-  if (input.sub === "accept" || input.sub === "decline") {
-    const duel = ledger.sql
-      .exec<{ id: number; from_id: string; amount: number }>(
-        "select id, from_id, amount from duels where to_id = ? and at > ? order by id desc limit 1",
-        input.user,
-        Date.now() - DUEL_LASTS,
-      )
-      .toArray()[0]
-    if (!duel) return quiet("nobody has challenged you. try being more annoying.")
-    const from = `<@${duel.from_id}>`
-    if (input.sub === "decline") {
-      ledger.sql.exec("delete from duels where id = ?", duel.id)
-      return loud(duelDeclinedLine(secureRand, { from, to: me }))
-    }
-    const rows = await ledger.ensure([duel.from_id, input.user])
-    const mine = rows.get(input.user)?.balance ?? 0
-    if (mine < duel.amount) return quiet(brokeLine(secureRand, { balance: coins(mine) }))
-    if ((rows.get(duel.from_id)?.balance ?? 0) < duel.amount) {
-      ledger.sql.exec("delete from duels where id = ?", duel.id)
-      return loud(`:crossed_swords: ${from} challenged ${me} for *${coins(duel.amount)}* and no longer has it. duel off. embarrassing.`)
-    }
-    const [winner, loser] = secureRand(2) ? [duel.from_id, input.user] : [input.user, duel.from_id]
-    ledger.sql.exec("delete from duels where id = ?", duel.id)
-    const moved = ledger.move({ from: loser, to: winner, amount: duel.amount, kind: "duel", note: "duel", actor: input.user })
-    if (!moved.ok) return quiet("something went wrong, try again")
-    const tax = levy(ledger, { from: winner, amount: duel.amount, rate: config.taxes.winnings, note: "winnings tax" })
-    return loud(duelDoneLine(secureRand, { winner: `<@${winner}>`, loser: `<@${loser}>`, amount: coins(duel.amount) }) + taxed(config, tax))
-  }
+  if (input.sub === "accept" || input.sub === "decline") return answerDuel(ledger, input.user, input.sub === "accept")
 
   // lottery
   const count = (id: string) =>
@@ -292,7 +307,8 @@ export async function settle(ledger: Ledger) {
   }
 
   const reserve = config.games.reserve
-  const house = held(ledger, HOUSE)
+  // What is staked on hands still being played isn't the house's yet.
+  const house = held(ledger, HOUSE) - owed(ledger)
   if (house > reserve) {
     ledger.move({ from: HOUSE, to: CENTRAL, amount: house - reserve, kind: "sweep", note: "house winnings" })
   } else if (house < reserve) {

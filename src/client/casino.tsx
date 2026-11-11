@@ -5,7 +5,7 @@ import { For, Show } from "solid-js"
 import { amountText, type CasinoStats, type Config } from "../shared/types"
 import { Chart, date, number, Section, signed, Tile } from "./economy"
 
-const NAMES: Record<string, string> = { flip: "Coin flip", slots: "Slots", lottery: "Lottery", duel: "Duels" }
+const NAMES: Record<string, string> = { flip: "Coin flip", slots: "Slots", roulette: "Roulette", blackjack: "Blackjack", lottery: "Lottery", duel: "Duels" }
 /** The next daily draw, 14:00 UTC, in the viewer's own time: "today 15:00" or "tomorrow 15:00". */
 function nextDraw(now = Date.now()) {
   const date = new Date(now)

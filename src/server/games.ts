@@ -70,6 +70,72 @@ export function spin(rand: Rand): { reels: [string, string, string]; tier: SlotT
   return { reels: [first, second, third], tier: tier.name, pays: tier.pays }
 }
 
+// ---------- roulette
+
+/** A European wheel: 0 to 36, one green pocket. Red, black, odd and even pay double; a single number pays 36 times. */
+export type Pocket = "red" | "black" | "odd" | "even" | number
+
+const REDS = new Set([1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36])
+
+export function parsePocket(word: string | undefined): Pocket | null {
+  const text = (word ?? "").toLowerCase()
+  if (text === "red" || text === "black" || text === "odd" || text === "even") return text
+  return /^\d{1,2}$/.test(text) && Number(text) <= 36 ? Number(text) : null
+}
+
+export const roulettePays = (pocket: Pocket) => (typeof pocket === "number" ? 36 : 2)
+
+export function roulette(rand: Rand, pocket: Pocket) {
+  const landed = rand(37)
+  const colour = landed === 0 ? ("green" as const) : REDS.has(landed) ? ("red" as const) : ("black" as const)
+  const won =
+    typeof pocket === "number" ? landed === pocket : landed !== 0 && (pocket === "red" || pocket === "black" ? colour === pocket : (landed % 2 === 1) === (pocket === "odd"))
+  return { landed, colour, won, pays: won ? roulettePays(pocket) : 0 }
+}
+
+// ---------- blackjack
+
+/** Rank 1 is an ace and 11 to 13 are the jack, queen and king. Cards come from an endless shoe, so nothing is counted. */
+export type Card = { rank: number; suit: number }
+
+export const dealCard = (rand: Rand): Card => ({ rank: rand(13) + 1, suit: rand(4) })
+
+/** The best total that doesn't bust, counting aces as 11 while that fits. */
+export function handTotal(cards: Card[]) {
+  let total = cards.reduce((sum, card) => sum + Math.min(card.rank, 10), 0)
+  let aces = cards.filter((card) => card.rank === 1).length
+  while (aces-- > 0 && total + 10 <= 21) total += 10
+  return total
+}
+
+export const isBlackjack = (cards: Card[]) => cards.length === 2 && handTotal(cards) === 21
+
+const RANKS = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"]
+const SUITS = ["♠", "♥", "♦", "♣"]
+export const showCards = (cards: Card[]) => cards.map((card) => `${RANKS[card.rank - 1]}${SUITS[card.suit]}`).join(" ")
+
+/** The dealer draws until 17 or more. */
+export function dealerPlays(rand: Rand, dealer: Card[]) {
+  const cards = [...dealer]
+  while (handTotal(cards) < 17) cards.push(dealCard(rand))
+  return cards
+}
+
+export type Outcome = "blackjack" | "win" | "push" | "lose" | "bust"
+
+/** How many times the stake comes back. A natural pays three to two. */
+export const BLACKJACK_PAYS: Record<Outcome, number> = { blackjack: 2.5, win: 2, push: 1, lose: 0, bust: 0 }
+export const BLACKJACK_TOP = 2.5
+
+export function settleHand(player: Card[], dealer: Card[]): Outcome {
+  const [mine, theirs] = [handTotal(player), handTotal(dealer)]
+  if (mine > 21) return "bust"
+  if (isBlackjack(player)) return isBlackjack(dealer) ? "push" : "blackjack"
+  if (isBlackjack(dealer)) return "lose"
+  if (theirs > 21 || mine > theirs) return "win"
+  return mine === theirs ? "push" : "lose"
+}
+
 // ---------- lottery
 
 /** One coin is one ticket, and every ticket is as likely as the next. */
@@ -176,6 +242,43 @@ const DRAWN: Line[] = [
 
 export const ticketLine = (rand: Rand, words: Record<string, string>) => `:tickets: ${say(rand, TICKETS, words)}`
 export const drawLine = (rand: Rand, words: Record<string, string>) => `:tada: ${say(rand, DRAWN, words)}`
+
+const ROULETTE_WON: Line[] = [
+  (w) => `${w.user} had *${w.amount}* on ${w.pocket} and it came in. *${w.win}* back. the wheel has made a mistake.`,
+  (w) => `${w.pocket} it is. ${w.user} takes *${w.win}* and will now believe they have a system.`,
+]
+
+const ROULETTE_LOST: Line[] = [
+  (w) => `${w.user} had *${w.amount}* on ${w.pocket}. the wheel disagreed.`,
+  (w) => `${w.user} loses *${w.amount}*. ${w.pocket} was a feeling, not a strategy.`,
+  (w) => `not ${w.pocket}. ${w.user}'s *${w.amount}* now belongs to someone with better furniture.`,
+]
+
+export function rouletteLine(rand: Rand, result: { landed: number; colour: string; won: boolean }, words: Record<string, string>) {
+  return `:${result.colour === "black" ? "black" : result.colour === "red" ? "red" : "large_green"}_circle: *${result.landed}* · ${say(rand, result.won ? ROULETTE_WON : ROULETTE_LOST, words)}`
+}
+
+const HAND_OVER: Record<Outcome, Line[]> = {
+  blackjack: [
+    (w) => `blackjack. ${w.user} takes *${w.win}* without having to make a single decision, which is when they do best.`,
+    (w) => `${w.user} was dealt 21 and collects *${w.win}*. skill had nothing to do with it.`,
+  ],
+  win: [
+    (w) => `${w.user} beats the dealer and takes *${w.win}*. the dealer is a random number generator, but well done.`,
+    (w) => `${w.user} wins *${w.win}*. somewhere a casino executive shrugs.`,
+  ],
+  push: [(w) => `a push. ${w.user} gets *${w.win}* back and has wasted everyone's time.`],
+  lose: [
+    (w) => `the dealer wins. ${w.user} loses *${w.amount}* to a deck of cards that doesn't exist.`,
+    (w) => `${w.user} stood, hopefully, and lost *${w.amount}*. hope is not a card.`,
+  ],
+  bust: [
+    (w) => `bust. ${w.user} asked for one more card, as they always do, and loses *${w.amount}*.`,
+    (w) => `${w.user} goes over 21 and loses *${w.amount}*. counting to 21 is the whole game.`,
+  ],
+}
+
+export const handLine = (rand: Rand, outcome: Outcome, words: Record<string, string>) => say(rand, HAND_OVER[outcome], words)
 
 const BROKE: Line[] = [
   (w) => `you have ${w.balance}. this is a casino, not a charity. go beg.`,
