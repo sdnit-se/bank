@@ -204,14 +204,14 @@ async function interactions(request: Request, env: Env, ctx: ExecutionContext) {
     team?: { id: string }
     user?: { id: string }
     response_url?: string
-    actions?: { action_id: string; value?: string }[]
+    actions?: { action_id: string; value?: string; selected_option?: { value: string } }[]
   }
   const action = payload.actions?.[0]
   const url = payload.response_url
   if (payload.type === "block_actions" && payload.team && payload.user && action && url?.startsWith("https://hooks.slack.com/")) {
     ctx.waitUntil(
       workspace(env, payload.team.id)
-        .interaction({ user: payload.user.id, action: action.action_id, value: action.value ?? "" })
+        .interaction({ user: payload.user.id, action: action.action_id, value: action.value ?? action.selected_option?.value ?? "" })
         .then((message) =>
           fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ replace_original: false, ...message }) }),
         )

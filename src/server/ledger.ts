@@ -1,5 +1,5 @@
-// What the Workspace lends everything this fork adds (the casino, the market, taxes, the stats): its tables, its one
-// way of moving coins, and Slack. Keeping those features behind this keeps workspace.ts close to upstream.
+// What the Workspace lends everything this fork adds (the casino, the market, taxes, the shop, the stats): its tables,
+// its one way of moving coins, and Slack. Keeping those features behind this keeps workspace.ts close to upstream.
 //
 // Amounts are in cents, like the rest of the ledger.
 
@@ -24,6 +24,8 @@ export type Ledger = {
   meta<T>(key: string): T | null
   setMeta(key: string, value: unknown): void
   call<T = Record<string, unknown>>(method: string, params?: Record<string, unknown>): Promise<T>
+  /** Whether this person runs the bank. */
+  admin(id: string): boolean
   /** Decides how the games come out. Only tests set it; everything else gets real randomness. */
   rand?: Rand
 }
@@ -50,6 +52,7 @@ export function historyLine(row: { kind: string; from_id: string | null; to_id: 
     case "bet":
       return `-${amount} on ${row.note === "lottery" ? "lottery tickets" : (row.note ?? "a bet")}`
     case "payout":
+      if (row.note === "pool refund") return `+${amount} back from an office bet that was called off`
       return `+${amount} won at ${row.note === "lottery" ? "the lottery" : (row.note ?? "the casino")}`
     case "duel":
       return row.from_id === user ? `-${amount} lost a duel to <@${row.to_id}>` : `+${amount} won a duel against <@${row.from_id}>`
@@ -63,6 +66,8 @@ export function historyLine(row: { kind: string; from_id: string | null; to_id: 
       return row.from_id === user ? `-${amount} ${row.note ?? "tax"}` : null
     case "bond":
       return row.to_id === BONDS ? `-${amount} into a bond at ${row.note}` : `+${amount} back from a bond`
+    case "shop":
+      return `-${amount} at the shop for ${row.note}`
     default:
       return null
   }
@@ -72,7 +77,14 @@ export function historyLine(row: { kind: string; from_id: string | null; to_id: 
 
 type Text = { type: string; text: string }
 export type Button = { type: "button"; text: Text; action_id: string; value: string; style?: "primary" | "danger" }
-type Block = { type: "section"; text: Text } | { type: "actions"; elements: Button[] }
+/** A "more" menu. What was picked arrives the way a button's value does. */
+export type Menu = { type: "overflow"; action_id: string; options: { text: Text; value: string }[] }
+export type Block =
+  | { type: "section"; text: Text; accessory?: Button }
+  | { type: "actions"; elements: (Button | Menu)[] }
+  | { type: "header"; text: Text }
+  | { type: "context"; elements: Text[] }
+  | { type: "divider" }
 
 export type Message = {
   response_type: "ephemeral" | "in_channel"
@@ -87,10 +99,18 @@ export const quiet = (text: string): Message => ({ response_type: "ephemeral", t
 /** An answer for the whole channel. */
 export const loud = (text: string): Message => ({ response_type: "in_channel", text })
 
-const section = (text: string): Block => ({ type: "section", text: { type: "mrkdwn", text } })
+export const section = (text: string, accessory?: Button): Block => ({ type: "section", text: { type: "mrkdwn", text }, ...(accessory ? { accessory } : {}) })
+
+export const button = (text: string, action: string, value: string, style?: Button["style"]): Button => ({
+  type: "button",
+  text: { type: "plain_text", text },
+  action_id: action,
+  value,
+  ...(style ? { style } : {}),
+})
 
 /** The same message with buttons under it. The text stays as it is for anything that can't show them. */
-export function withButtons(message: Message, buttons: Button[]): Message {
+export function withButtons(message: Message, buttons: (Button | Menu)[]): Message {
   return { ...message, blocks: [section(message.text), { type: "actions", elements: buttons }] }
 }
 

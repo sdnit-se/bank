@@ -290,7 +290,7 @@ function Dashboard(props: { me: Me; refresh: () => void }) {
 
         <Switch>
           <Match when={tab() === "leaderboard"}>
-            <LeaderboardView me={props.me} accounts={leaderboard()?.accounts} />
+            <LeaderboardView me={props.me} accounts={leaderboard()?.accounts} titles={leaderboard()?.titles} />
           </Match>
           <Match when={tab() === "activity"}>
             <ActivityView me={props.me} history={history()} />
@@ -370,7 +370,7 @@ const RANKINGS = [
   { key: "balance", label: "Richest", note: "however they got it" },
 ] as const
 
-function LeaderboardView(props: { me: Me; accounts: Me["account"][] | undefined }) {
+function LeaderboardView(props: { me: Me; accounts: Me["account"][] | undefined; titles: Record<string, string[]> | undefined }) {
   const [ranking, setRanking] = createSignal<(typeof RANKINGS)[number]>(RANKINGS[0])
   const ranked = createMemo(() =>
     [...(props.accounts ?? [])].sort((a, b) => b![ranking().key] - a![ranking().key] || b!.balance - a!.balance || a!.name.localeCompare(b!.name)),
@@ -399,6 +399,14 @@ function LeaderboardView(props: { me: Me; accounts: Me["account"][] | undefined 
                     <span class="truncate">{account!.name}</span>
                     <Show when={account!.id === props.me.user.id}>
                       <Badge variant="subtle">You</Badge>
+                    </Show>
+                    <Show when={props.titles?.[account!.id]}>
+                      {(titles) => (
+                        <span class="faint truncate hidden sm:inline" title={titles().join(" · ")}>
+                          {titles()[0]}
+                          {titles().length > 1 ? ` +${titles().length - 1}` : ""}
+                        </span>
+                      )}
                     </Show>
                   </span>
                   <span class="faint num hidden sm:inline">
@@ -442,6 +450,7 @@ function describe(entry: Entry, history: History, viewer: string | null) {
     case "bet":
       return `${name(entry.from)} staked on ${entry.note === "lottery" ? "lottery tickets" : (entry.note ?? "a bet")}`
     case "payout":
+      if (entry.note === "pool refund") return `${name(entry.to)} got a stake back from an office bet`
       return `${name(entry.to)} won at ${entry.note === "lottery" ? "the lottery" : (entry.note ?? "the casino")}`
     case "duel":
       return `${name(entry.to)} beat ${name(entry.from)} in a duel`
@@ -457,6 +466,8 @@ function describe(entry: Entry, history: History, viewer: string | null) {
       return `${name(entry.actor ?? entry.from)} paid a ${entry.note ?? "tax"}`
     case "bond":
       return entry.to === BONDS ? `${name(entry.from)} bought a bond at ${entry.note}` : `${possessive(entry.to)} bond matured`
+    case "shop":
+      return `${name(entry.from)} bought ${entry.note} in the shop`
     case "print":
       return `the market printed ${viewer === entry.actor ? "your" : `${name(entry.actor)}'s`} gain on ${entry.note ?? "a sale"}`
     default:
@@ -466,7 +477,7 @@ function describe(entry: Entry, history: History, viewer: string | null) {
 
 /** Entries whose note is written by Bank and already part of the description. */
 function fixedNote(entry: Entry) {
-  return ["grant", "bet", "payout", "duel", "sweep", "stimulus", "buy", "sell", "tax", "print", "bond"].includes(entry.kind)
+  return ["grant", "bet", "payout", "duel", "sweep", "stimulus", "buy", "sell", "tax", "print", "bond", "shop"].includes(entry.kind)
 }
 
 const page = 30
@@ -981,7 +992,7 @@ function SettingsPanel(props: { me: Me; changed: () => void }) {
           <div class="min-w-0">
             <div class="strong">Casino</div>
             <div class="muted">
-              Flips, slots, roulette, blackjack, duels and a daily lottery, under <Code>/bank casino</Code>.
+              Flips, slots, roulette, blackjack, duels, heists, office bets and a daily lottery, under <Code>/bank casino</Code>.
             </div>
           </div>
           <Toggle checked={draft.games.enabled} onChange={(value: boolean) => setDraft("games", "enabled", value)} aria-label="Open the casino" />
@@ -1017,6 +1028,52 @@ function SettingsPanel(props: { me: Me; changed: () => void }) {
           <NumberField label="Wealth above" value={draft.taxes.wealthAbove} set={(value) => setDraft("taxes", "wealthAbove", value)} />
           <NumberField decimal label="Bond rate, % a week" value={draft.taxes.interest} set={(value) => setDraft("taxes", "interest", value)} />
         </Numbers>
+
+        <div class="flex flex-col gap-2">
+          <div class="flex items-baseline justify-between gap-3">
+            <span class="strong">Shop</span>
+            <span class="faint">
+              What {draft.plural} can buy, under <Code>/bank shop</Code>. Bank takes the payment for the central bank; you hand the thing over.
+            </span>
+          </div>
+          <div class="inset">
+            <For each={draft.shop} fallback={<Empty>Nothing for sale. Picking the lunch place and choosing Friday's playlist are popular.</Empty>}>
+              {(item, index) => (
+                <div class="row flex items-center gap-2 px-2 py-1.5">
+                  <TextInput
+                    class="flex-1 min-w-0 w-auto"
+                    surface="invisible"
+                    aria-label="What it is"
+                    placeholder="Pick the lunch place"
+                    value={item.name}
+                    onInput={(event) => setDraft("shop", index(), "name", event.currentTarget.value)}
+                  />
+                  <TextInput
+                    class="w-[104px] shrink-0"
+                    numeric
+                    inputmode="numeric"
+                    aria-label="Price"
+                    value={String(item.price)}
+                    onInput={(event) => setDraft("shop", index(), "price", Number(event.currentTarget.value.replace(/[^0-9]/g, "")) || 0)}
+                    trailing={<span class="faint pr-1 truncate max-w-12">{item.price === 1 ? draft.singular : draft.plural}</span>}
+                  />
+                  <IconButton
+                    variant="ghost-muted"
+                    aria-label={`Remove ${item.name}`}
+                    title="Remove"
+                    icon={<Icon name="outline-trash" size="small" />}
+                    onClick={() => setDraft("shop", (list) => list.filter((_, i) => i !== index()))}
+                  />
+                </div>
+              )}
+            </For>
+          </div>
+          <div>
+            <Button variant="ghost-muted" size="small" onClick={() => setDraft("shop", (list) => [...list, { name: "", price: 50 }])}>
+              Add something to sell
+            </Button>
+          </div>
+        </div>
 
         <div class="flex flex-col gap-2">
           <div class="flex items-baseline justify-between gap-3">

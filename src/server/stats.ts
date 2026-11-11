@@ -169,7 +169,7 @@ export function casinoStats(ledger: Ledger): CasinoStats {
   const sold = ledger.sql.exec<{ n: number | null }>("select sum(count) as n from tickets").one().n ?? 0
   const gifts =
     ledger.sql.exec<{ n: number | null }>("select sum(case when kind = 'refund' then -amount else amount end) as n from entries where kind in ('give', 'reaction', 'refund')").one().n ?? 0
-  const order = ["flip", "slots", "roulette", "blackjack", "lottery", "duel"]
+  const order = ["flip", "slots", "roulette", "blackjack", "heist", "lottery", "duel"]
   return {
     staked: coins([...games.values()].reduce((sum, row) => sum + row.staked, 0)),
     bets: [...games.values()].reduce((sum, row) => sum + row.plays, 0),

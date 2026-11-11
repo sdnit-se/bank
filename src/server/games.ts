@@ -136,6 +136,15 @@ export function settleHand(player: Card[], dealer: Card[]): Outcome {
   return mine === theirs ? "push" : "lose"
 }
 
+// ---------- heists
+
+/** A crew that gets away is paid this many times what each of them put in. */
+export const HEIST_PAYS = 3
+export const HEIST_CREW = 8
+
+/** The chance of getting away, out of 100. Every pair of hands up to five helps, and even five lose a little on average. */
+export const heistChance = (crew: number) => 22 + 2 * Math.min(crew, 5)
+
 // ---------- lottery
 
 /** One coin is one ticket, and every ticket is as likely as the next. */
@@ -208,6 +217,11 @@ const DUEL_OPEN: Line[] = [
   (w) => `${w.from} wants ${w.to}'s *${w.amount}* and is willing to flip a coin for it. \`/bank accept\` or \`/bank decline\`. ten minutes, everyone's watching.`,
 ]
 
+const DUEL_ANYONE: Line[] = [
+  (w) => `${w.from} will flip a coin against anyone for *${w.amount}*. first to accept gets it. ten minutes.`,
+  (w) => `${w.from} has *${w.amount}* and a point to prove. anyone can take the other side of the coin. ten minutes.`,
+]
+
 const DUEL_DONE: Line[] = [
   (w) => `${w.winner} beat ${w.loser} in a duel and took *${w.amount}*. ${w.loser}, it was a coin flip and you still lost to them.`,
   (w) => `${w.loser} just paid ${w.winner} *${w.amount}* to be humiliated in public. money well spent.`,
@@ -219,7 +233,7 @@ const DUEL_DECLINED: Line[] = [
   (w) => `${w.to} ran away from ${w.from}. noted, and written down forever.`,
 ]
 
-export const duelOpenLine = (rand: Rand, words: Record<string, string>) => `:crossed_swords: ${say(rand, DUEL_OPEN, words)}`
+export const duelOpenLine = (rand: Rand, words: Record<string, string>) => `:crossed_swords: ${say(rand, words.to ? DUEL_OPEN : DUEL_ANYONE, words)}`
 export const duelDoneLine = (rand: Rand, words: Record<string, string>) => `:crossed_swords: ${say(rand, DUEL_DONE, words)}`
 export const duelDeclinedLine = (rand: Rand, words: Record<string, string>) => `:chicken: ${say(rand, DUEL_DECLINED, words)}`
 
@@ -272,6 +286,19 @@ const HAND_OVER: Record<Outcome, Line[]> = {
 }
 
 export const handLine = (rand: Rand, outcome: Outcome, words: Record<string, string>) => say(rand, HAND_OVER[outcome], words)
+
+const HEIST: Record<"won" | "lost", Line[]> = {
+  won: [
+    (w) => `:moneybag: the crew got away with it. ${w.crew} ${w.walk} out with *${w.win}* each. the house is reviewing its security, and its life choices.`,
+    (w) => `:moneybag: ${w.crew} robbed the house and took *${w.win}* each. nobody saw anything. everybody saw everything.`,
+  ],
+  lost: [
+    (w) => `:rotating_light: the heist failed. ${w.crew} lost *${w.amount}* each and ${w.was} last seen waving at the security camera.`,
+    (w) => `:rotating_light: ${w.crew} tripped the alarm on the way in. the house keeps *${w.amount}* a head and sends its regards.`,
+  ],
+}
+
+export const heistLine = (rand: Rand, won: boolean, words: Record<string, string>) => say(rand, HEIST[won ? "won" : "lost"], words)
 
 const BROKE: Line[] = [
   (w) => `you have ${w.balance}. this is a casino, not a charity. go beg.`,

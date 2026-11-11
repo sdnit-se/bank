@@ -27,6 +27,9 @@ export type Taxes = {
   interest: number
 }
 
+/** Something an admin has put a price on. Bank takes the coins; handing it over is up to a human. */
+export type ShopItem = { name: string; price: number }
+
 export type Config = {
   singular: string
   plural: string
@@ -38,6 +41,7 @@ export type Config = {
   games: Games
   market: Market
   taxes: Taxes
+  shop: ShopItem[]
 }
 
 export const defaultConfig: Config = {
@@ -55,6 +59,7 @@ export const defaultConfig: Config = {
   games: { enabled: false, maxBet: 25, reserve: 500 },
   market: { enabled: false, fee: 1 },
   taxes: { transfer: 0, winnings: 0, wealth: 0, wealthAbove: 200, interest: 0 },
+  shop: [],
 }
 
 /**
@@ -65,6 +70,9 @@ export const defaultConfig: Config = {
  * `buy` puts coins into the market against a share price and `sell` takes them out at the price of the day. `tax`
  * goes to the central bank. `print` is the market creating the coins it lacks to pay someone who sold at a profit:
  * along with a grant or an adjustment, the only kind that adds to how many coins exist.
+ *
+ * `bond` is coins going into a bond and coming back out, and `shop` is someone paying the central bank for something
+ * an admin put a price on.
  */
 export type EntryKind =
   | "grant"
@@ -82,6 +90,7 @@ export type EntryKind =
   | "tax"
   | "print"
   | "bond"
+  | "shop"
 
 /**
  * The accounts that aren't people. They hold coins like anyone else, so games move coins around without creating or
@@ -92,12 +101,15 @@ export const POT = "POT"
 export const CENTRAL = "CENTRAL"
 export const MARKET = "MARKET"
 export const BONDS = "BONDS"
+/** Holds what is staked on office bets until someone says how they went. */
+export const POOLS = "POOLS"
 export const INSTITUTIONS: Record<string, string> = {
   [HOUSE]: "the house",
   [POT]: "the lottery pot",
   [CENTRAL]: "the central bank",
   [MARKET]: "the market",
   [BONDS]: "the bond desk",
+  [POOLS]: "the bookmaker",
 }
 
 export type Entry = {
@@ -150,7 +162,8 @@ export type Me = {
 
 export const EMOJI_NAME = /^[a-z0-9_\-+'.]+$/
 
-export type Leaderboard = { accounts: Account[] }
+/** `titles` is what each person has earned, newest first, by their id. */
+export type Leaderboard = { accounts: Account[]; titles: Record<string, string[]> }
 
 export type History = { entries: Entry[]; people: Record<string, { name: string; image: string | null }> }
 
@@ -168,7 +181,7 @@ export type EconomyDay = {
 }
 
 export type Economy = {
-  supply: { people: number; house: number; pot: number; central: number; market: number; bonds: number; total: number }
+  supply: { people: number; house: number; pot: number; central: number; market: number; bonds: number; pools: number; total: number }
   /** Taxes and fees paid to the central bank over the last 7 and 30 days. */
   taxes: { week: number; month: number }
   members: number

@@ -25,7 +25,9 @@ import { market, marketHelp, marketStats, portfolio, setupMarket } from "./marke
 import { convertToCents, inCents, money as currency } from "./money"
 import { slack, SlackError } from "./slack"
 import { casinoStats, sources } from "./stats"
+import { shop, shopClick, shopHelp } from "./shop"
 import { interact } from "./tables"
+import { titles, titlesOf } from "./titles"
 import { levy, stimulus } from "./taxes"
 
 export type Install = {
@@ -209,15 +211,16 @@ export class Workspace extends DurableObject<Env> {
       meta: (key) => this.meta(key),
       setMeta: (key, value) => this.setMeta(key, value),
       call: (method, params) => this.call(method, params),
+      admin: (id) => this.isAdmin(id),
     }
   }
 
-  /** A click on a button under one of the casino's messages. */
+  /** A click on a button under one of Bank's messages. */
   async interaction(input: { user: string; action: string; value: string }): Promise<SlackMessage> {
-    return interact(this.ledger(), input)
+    return (await shopClick(this.ledger(), input)) ?? interact(this.ledger(), input)
   }
 
-  /** The daily lottery draw. */
+  /** The daily round. */
   async alarm() {
     await settle(this.ledger())
   }
@@ -719,6 +722,7 @@ export class Workspace extends DurableObject<Env> {
         .exec<AccountRow>("select * from accounts where bot = 0 and gone = 0 order by balance desc, received desc, name asc limit 500")
         .toArray()
         .map((row) => this.account(row)),
+      titles: titlesOf(this.ledger()),
     }
   }
 
@@ -794,6 +798,10 @@ export class Workspace extends DurableObject<Env> {
       games: { enabled: Boolean(games.enabled), maxBet: whole(games.maxBet, 1), reserve: whole(games.reserve, 0) },
       market: { enabled: Boolean(market.enabled), fee: rate(market.fee, 25) },
       taxes: { transfer: rate(taxes.transfer, 50), winnings: rate(taxes.winnings, 90), wealth: rate(taxes.wealth, 50), wealthAbove: whole(taxes.wealthAbove, 0), interest: rate(taxes.interest, 50) },
+      shop: (input.shop ?? this.settings().shop)
+        .map((item) => ({ name: clean(item.name, 60).replace(/[<>&*_~`]/g, ""), price: whole(item.price, 1) }))
+        .filter((item) => item.name)
+        .slice(0, 20),
     }
     const rateBefore = this.settings().taxes.interest
     this.setMeta("config", config)
@@ -1055,6 +1063,10 @@ export class Workspace extends DurableObject<Env> {
     if (traded) return traded
     const saved = await bonds(this.ledger(), { sub, words: words.slice(1), user: params.user_id, channel: params.channel ?? null })
     if (saved) return saved
+    const sold = await shop(this.ledger(), { sub, words: words.slice(1), user: params.user_id })
+    if (sold) return sold
+    const earned = titles(this.ledger(), { sub, user: params.user_id })
+    if (earned) return earned
 
     // give / send / pay, or just "/bank @someone 10"
     const rest = ["give", "send", "pay", "tip"].includes(sub) ? words.slice(1) : words
@@ -1093,6 +1105,7 @@ export class Workspace extends DurableObject<Env> {
       casinoHelp(config),
       marketHelp(config),
       bondHelp(config),
+      shopHelp(config),
       [`<${this.env.PUBLIC_URL}|open bank> · the leaderboard, the economy, and who the casino has ruined`],
     ]
       .map((lines) => lines.filter(Boolean).join("\n"))

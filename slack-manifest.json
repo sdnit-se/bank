@@ -1,9 +1,9 @@
 {
   "display_information": {
     "name": "Bank",
-    "description": "A tiny currency for our Slack, with a casino and a stock market attached.",
+    "description": "A tiny currency for our Slack, with a casino, a stock market and a newspaper attached.",
     "background_color": "#1a1a1a",
-    "long_description": "Everyone starts with 100 coins. Give them away when someone helps you out: react to their message with a coin emoji, or run /bank give @someone 10. /bank balance, /bank top and /bank history show where you stand.\n\nThen lose them. /bank flip, /bank slots, /bank duel and /bank lottery are the casino. /bank buy, /bank sell and /bank portfolio trade real stocks and crypto at real prices with play money. /bank help lists everything.\n\nThe leaderboard, the state of the economy and the casino's hall of shame are at https://labs.shebang.se/bank."
+    "long_description": "Everyone starts with 100 coins. Give them away when someone helps you out: react to their message with a coin emoji, or run /bank give @someone 10. /bank balance, /bank top and /bank history show where you stand.\n\nThen lose them. /bank flip, /bank slots, /bank duel, /bank heist and /bank lottery are the casino, and /bank pool takes bets on whatever the office is arguing about. /bank shop is where coins buy something. /bank buy, /bank sell and /bank portfolio trade real stocks and crypto at real prices with play money. /bank help lists everything.\n\nThe leaderboard, the state of the economy and the casino's hall of shame are at https://labs.shebang.se/bank."
   },
   "features": {
     "app_home": {
@@ -66,8 +66,8 @@
       {
         "command": "/bank-duel",
         "url": "https://labs.shebang.se/bank/slack/commands",
-        "description": "Flip a coin against someone for their coins",
-        "usage_hint": "@someone 10",
+        "description": "Flip a coin against someone, or anyone, for coins",
+        "usage_hint": "@someone 10 · 10",
         "should_escape": true
       },
       {
@@ -102,6 +102,26 @@
         "url": "https://labs.shebang.se/bank/slack/commands",
         "description": "Look a price up",
         "usage_hint": "ERIC-B.ST · AAPL · BTC-USD",
+        "should_escape": true
+      },
+      {
+        "command": "/bank-heist",
+        "url": "https://labs.shebang.se/bank/slack/commands",
+        "description": "Get a crew together and rob the house",
+        "usage_hint": "10 · join · go",
+        "should_escape": true
+      },
+      {
+        "command": "/bank-pool",
+        "url": "https://labs.shebang.se/bank/slack/commands",
+        "description": "Open an office bet with a yes or no answer",
+        "usage_hint": "will the demo work? · 10 will the demo work?",
+        "should_escape": true
+      },
+      {
+        "command": "/bank-shop",
+        "url": "https://labs.shebang.se/bank/slack/commands",
+        "description": "What your coins can buy",
         "should_escape": true
       },
       {

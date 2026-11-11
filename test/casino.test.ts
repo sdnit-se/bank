@@ -4,9 +4,13 @@ import { expect, test } from "bun:test"
 import { play, settle } from "../src/server/casino"
 import type { Rand } from "../src/server/games"
 import type { Message } from "../src/server/ledger"
+import { shop, shopClick } from "../src/server/shop"
 import { interact } from "../src/server/tables"
-import { CENTRAL, CENTS, HOUSE, nextDraw, POT } from "../src/shared/types"
+import { CENTRAL, CENTS, HOUSE, nextDraw, POOLS, POT } from "../src/shared/types"
 import { A, B, clock, frozen, world as bare } from "./world"
+
+const C = "UCCC"
+const D = "UDDD"
 
 frozen()
 
@@ -195,6 +199,13 @@ test("a button works for the person it is for, and only once", async () => {
   const answers = await Promise.all([w.click(B, "duel_accept", duel), w.click(B, "duel_accept", duel)])
   expect(answers.filter((answer) => answer.replace_original)).toHaveLength(1)
   expect([w.balance(A), w.balance(B)].sort()).toEqual([120, 80])
+  // A duel with nobody named goes to the first taker who isn't the challenger.
+  w.join(C)
+  const open = button(await w.say(C, "duel 20"))
+  expect((await w.click(C, "duel_accept", open)).text).toContain("nobody has challenged you")
+  expect((await w.click(A, "duel_accept", open)).replace_original).toBe(true)
+  expect((await w.click(B, "duel_accept", open)).text).toContain("already settled")
+  expect([80, 120]).toContain(w.balance(C))
 
   w.deck(10, 5, 10, 7, 2)
   const first = button(await w.say(A, "blackjack 10"))
@@ -208,5 +219,81 @@ test("a button works for the person it is for, and only once", async () => {
   await w.say(A, "blackjack 10")
   expect((await w.click(A, "bj_stand", first)).text).toContain("that hand is over")
   expect(w.balance(A)).toBe(settled - 10)
+  expect(w.total()).toBe(800)
+})
+
+test("a heist costs nobody anything until the crew goes in, and then pays all of them or none", async () => {
+  const w = world()
+  w.print(HOUSE, 500)
+  const plan = button(await w.say(A, "heist 10"))
+  expect((await w.click(B, "heist_go", plan)).text).toContain("only <@UAAA> gives the word")
+  await w.click(B, "heist_join", plan)
+  expect((await w.click(B, "heist_join", plan)).text).toContain("already in the van")
+  expect([w.balance(A), w.balance(B)]).toEqual([100, 100])
+  w.ledger.rand = () => 0
+  await w.click(A, "heist_go", plan)
+  expect([w.balance(A), w.balance(B), w.balance(HOUSE)]).toEqual([120, 120, 460])
+  expect((await w.click(A, "heist_go", plan)).response_type).toBe("ephemeral")
+
+  w.ledger.rand = () => 99
+  await w.say(A, "heist 10")
+  await w.say(B, "heist join")
+  await w.say(A, "heist go")
+  expect([w.balance(A), w.balance(B), w.balance(HOUSE)]).toEqual([110, 110, 480])
   expect(w.total()).toBe(700)
+
+  // The house has to be able to pay the whole crew.
+  const poor = world()
+  poor.print(HOUSE, 30)
+  const small = button(await poor.say(A, "heist 10"))
+  expect((await poor.click(B, "heist_join", small)).text).toContain("doesn't hold enough")
+})
+
+test("an office bet pays the whole pot to the side that was right, and gives stakes back when nobody was", async () => {
+  const w = world()
+  w.join(C)
+  w.join(D)
+  const first = button(await w.say(A, "pool 10 will the demo work?"))
+  expect((await w.click(A, "pool_yes", first)).text).toContain("don't get to bet on it")
+  await w.click(B, "pool_yes", first)
+  await w.click(B, "pool_yes", first)
+  expect((await w.click(B, "pool_yes", first)).text).toContain("the most anyone can put on one question")
+  await w.click(C, "pool_no", first)
+  expect((await w.click(C, "pool_yes", first)).text).toContain("no hedging")
+  expect(w.balance(POOLS)).toBe(30)
+  expect((await w.click(B, "pool_rule", `${first}:yes`)).text).toContain("only <@UAAA> or an admin")
+  await w.click(A, "pool_rule", `${first}:yes`)
+  expect([w.balance(A), w.balance(B), w.balance(C), w.balance(POOLS)]).toEqual([100, 110, 90, 0])
+
+  // Three stakes of five cents don't split two ways, and still nothing is left with the bookmaker.
+  const odd = button(await w.say(A, "pool 0.05 is it friday?"))
+  for (const [user, side] of [[B, "pool_yes"], [C, "pool_yes"], [D, "pool_no"]] as const) await w.click(user, side, odd)
+  await w.say(A, `pool ${odd} yes won`)
+  expect([w.balance(B) + w.balance(C), w.balance(D), w.balance(POOLS)]).toEqual([200.05, 99.95, 0])
+
+  // Nobody on the side that was right, and a question left open for a month: everyone gets their stake back.
+  const wrong = button(await w.say(A, "pool 10 will it rain?"))
+  await w.click(B, "pool_yes", wrong)
+  await w.click(A, "pool_rule", `${wrong}:no`)
+  const old = button(await w.say(A, "pool 10 will we ever know?"))
+  await w.click(D, "pool_no", old)
+  expect(w.balance(POOLS)).toBe(10)
+  clock.now += 31 * 24 * 60 * 60_000
+  await settle(w.ledger)
+  expect([w.balance(B) + w.balance(C), w.balance(D), w.balance(POOLS)]).toEqual([200.05, 99.95, 0])
+  expect(w.total()).toBe(400)
+})
+
+test("the shop takes the price for the central bank, and only from someone who has it", async () => {
+  const w = world()
+  w.config.shop = [{ name: "Pick the lunch place", price: 60 * CENTS }]
+  const ask = (user: string, ...words: string[]) => shop(w.ledger, { sub: "shop", words, user })
+  expect((await ask(A))!.blocks).toHaveLength(2)
+  expect((await ask(A, "1"))!.response_type).toBe("in_channel")
+  expect([w.balance(A), w.balance(CENTRAL)]).toEqual([40, 60])
+  expect((await ask(A, "1"))!.response_type).toBe("ephemeral")
+  expect((await shopClick(w.ledger, { user: B, action: "shop_buy", value: "Pick the lunch place" }))!.response_type).toBe("in_channel")
+  expect((await shopClick(w.ledger, { user: B, action: "shop_buy", value: "A pony" }))!.text).toContain("doesn't sell that")
+  expect([w.balance(B), w.balance(CENTRAL)]).toEqual([40, 120])
+  expect(w.total()).toBe(200)
 })

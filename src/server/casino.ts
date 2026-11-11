@@ -1,5 +1,5 @@
-// Games, the lottery draw and the economy figures, as they touch the ledger. The odds and the wording live in
-// games.ts, and the games with a second step (duels, blackjack) in tables.ts.
+// Games, the daily round and the economy figures, as they touch the ledger. The odds and the wording live in
+// games.ts, the games with a second step (duels, blackjack, heists) in tables.ts, and office bets in pools.ts.
 //
 // Nothing here creates or destroys coins. A stake goes to the house or the lottery pot, a win comes back out of them,
 // and what the house wins beyond its reserve goes to the central bank, which pays part of it back into each draw.
@@ -7,7 +7,7 @@
 // Like the rest of the ledger this counts in cents, and the settings it is handed are in cents too. The economy
 // figures are the one thing that leaves here for the web app, so they go out in coins.
 
-import { BONDS, CENTRAL, CENTS, HOUSE, INSTITUTIONS, MARKET, nextDraw, POT, toCents, type Config, type Economy } from "../shared/types"
+import { BONDS, CENTRAL, CENTS, HOUSE, INSTITUTIONS, MARKET, nextDraw, POOLS, POT, toCents, type Config, type Economy } from "../shared/types"
 import { matureBonds } from "./bonds"
 import {
   BLACKJACK_TOP,
@@ -15,6 +15,7 @@ import {
   draw,
   drawLine,
   flip,
+  HEIST_PAYS,
   FLIP_PAYS,
   flipLine,
   parsePocket,
@@ -31,8 +32,11 @@ import {
 } from "./games"
 import { held, loud, quiet, schedule, tooFast, type Ledger, type Message } from "./ledger"
 import { money as currency } from "./money"
-import { answerDuel, deal, hasHand, offerDuel, owed, playHand } from "./tables"
+import { publish } from "./paper"
+import { expirePools, pool } from "./pools"
+import { answerDuel, deal, hasHand, joinHeist, offerDuel, owed, planHeist, playHand, runHeist } from "./tables"
 import { collectWealth, levy, taxed } from "./taxes"
+import { award } from "./titles"
 
 const DAY = 24 * 60 * 60 * 1000
 /** The share of the central bank's reserves, in percent, that it adds to each lottery draw. */
@@ -52,6 +56,10 @@ export function setup(sql: SqlStorage) {
     create table if not exists tickets (id text primary key, count integer not null);
     create table if not exists hands (user_id text primary key, stake integer not null, player text not null, dealer text not null, at integer not null);
     create table if not exists bonds (id integer primary key autoincrement, user_id text not null, amount integer not null, rate real not null, matures integer not null);
+    create table if not exists heists (id integer primary key autoincrement, by_id text not null, stake integer not null, crew text not null, at integer not null);
+    create table if not exists pools (id integer primary key autoincrement, by_id text not null, question text not null, stake integer not null, closed integer not null default 0, channel text, at integer not null);
+    create table if not exists pool_bets (pool integer not null, user_id text not null, side text not null, amount integer not null, primary key (pool, user_id));
+    create table if not exists titles (user_id text not null, title text not null, at integer not null, primary key (user_id, title));
   `)
   // Marked as bots, which keeps them off the leaderboard and stops anyone giving them coins by hand.
   for (const [id, name] of Object.entries(INSTITUTIONS)) {
@@ -74,8 +82,11 @@ export function casinoHelp(config: Config) {
     `\`/bank slots 10\` · three reels, up to ${SLOT_TOP} times your stake`,
     `\`/bank roulette 10 red\` · red, black, odd or even doubles it. a number from 0 to 36 pays 36 times`,
     `\`/bank blackjack 10\` · beat the dealer to 21, then \`/bank hit\` or \`/bank stand\`. walk away for ten minutes and the house keeps it`,
-    `\`/bank duel @someone 10\` · a coin flip between you. they \`/bank accept\` or \`/bank decline\``,
+    `\`/bank duel @someone 10\` · a coin flip between you. they \`/bank accept\` or \`/bank decline\`. leave the name out and anyone can take it`,
+    `\`/bank heist 10\` · get a crew together to rob the house. ${HEIST_PAYS} times your stake if it works, and a bigger crew has better odds`,
+    `\`/bank pool will the demo work?\` · an office bet. people pick yes or no, and whoever called it splits the pot. \`/bank pools\` lists them`,
     `\`/bank lottery 5\` · five tickets for the daily draw. the next one is ${drawTime()}`,
+    `\`/bank titles\` · what you've earned, and what's left to earn`,
     `\`/bank casino\` · what the house and the pot hold`,
   ]
 }
@@ -187,14 +198,21 @@ const blackjack: Game = async (bet) => {
 }
 
 const duel: Game = async (bet) => {
-  const to = bet.words.find((word) => MENTION.test(word))?.match(MENTION)![1]
-  if (!to) return quiet("name your victim: `/bank duel @someone 10`")
+  const to = bet.words.find((word) => MENTION.test(word))?.match(MENTION)![1] ?? null
   if (to === bet.user) return quiet("you can't duel yourself. you'd lose.")
-  const problem = await refuse(bet, "say how much: `/bank duel @someone 10`")
+  const problem = await refuse(bet, "say how much, and who if you have someone in mind: `/bank duel @someone 10`, or `/bank duel 10` for anyone")
   if (problem) return quiet(problem)
-  const opponent = (await bet.ledger.ensure([to])).get(to)
-  if (!opponent || opponent.bot || opponent.gone) return quiet("they can't play. pick on someone who exists.")
+  const opponent = to ? (await bet.ledger.ensure([to])).get(to) : null
+  if (to && (!opponent || opponent.bot || opponent.gone)) return quiet("they can't play. pick on someone who exists.")
   return offerDuel(bet.ledger, { from: bet.user, to, amount: bet.amount })
+}
+
+const heist: Game = async (bet) => {
+  const word = bet.words[0]?.toLowerCase()
+  if (word === "join") return joinHeist(bet.ledger, bet.user)
+  if (word === "go") return runHeist(bet.ledger, bet.user)
+  const problem = (await refuse(bet, "say what each of the crew puts in: `/bank heist 10`")) ?? tooRich(bet, HEIST_PAYS)
+  return problem ? quiet(problem) : planHeist(bet.ledger, bet.user, bet.amount)
 }
 
 const tickets = (ledger: Ledger) => ledger.sql.exec<{ n: number | null }>("select sum(count) as n from tickets").one().n ?? 0
@@ -250,6 +268,9 @@ const GAMES = new Map<string, Game>([
   ["duel", duel],
   ["accept", (bet) => answerDuel(bet.ledger, bet.user, true)],
   ["decline", (bet) => answerDuel(bet.ledger, bet.user, false)],
+  ["heist", heist],
+  ["pool", (bet) => pool(bet.ledger, bet)],
+  ["pools", (bet) => pool(bet.ledger, bet)],
   ["lottery", lottery],
   ["lotto", lottery],
   ["casino", books],
@@ -277,24 +298,17 @@ export async function play(ledger: Ledger, input: { sub: string; words: string[]
   })
 }
 
-// ---------- the daily draw
+// ---------- the daily round
 
 /**
  * The daily round, run from the Workspace's alarm: collects the wealth tax when a week is up, settles the house
- * against its reserve, and draws the lottery if anyone holds a ticket. The next bet sets the alarm again, and so does
- * this while there is a wealth tax to come back for.
+ * against its reserve, pays back bonds, calls off office bets nobody settled, draws the lottery if anyone holds a
+ * ticket, and hands out titles. What came of it goes out as the morning paper. It comes back the next day by itself
+ * for as long as there is anything to come back for.
  */
 export async function settle(ledger: Ledger) {
   const config = ledger.config()
-  const channel = ledger.meta<string>("lottery_channel")
-  const post = (to: string, text: string) => ledger.call("chat.postMessage", { channel: to, text, unfurl_links: false })
-  const quietly = (error: unknown) => console.error("announcement failed", error)
-
   const wealth = collectWealth(ledger)
-  if (wealth && wealth.collected > 0 && channel) {
-    const payers = `${wealth.payers} ${wealth.payers === 1 ? "person" : "people"}`
-    await post(channel, `:classical_building: the central bank collected *${currency(config, wealth.collected)}* in wealth tax from ${payers}. being rich is expensive.`).catch(quietly)
-  }
 
   const reserve = config.games.reserve
   // What is staked on hands still being played isn't the house's yet.
@@ -307,14 +321,11 @@ export async function settle(ledger: Ledger) {
   }
 
   const matured = matureBonds(ledger)
-  if (matured && channel) {
-    const owners = matured.owners.slice(0, 10).map((id) => `<@${id}>`).join(", ")
-    const ending = matured.short ? "the central bank couldn't cover all the interest. a small sovereign default, nothing to see here." : "patience, rewarded. disgusting."
-    await post(channel, `:scroll: bonds matured: *${currency(config, matured.lent)}* back to ${owners} with *${currency(config, matured.paid)}* in interest. ${ending}`).catch(quietly)
-  }
+  const expired = expirePools(ledger)
 
   const tickets = ledger.sql.exec<{ user: string; count: number }>("select id as user, count from tickets order by id").toArray()
   const winner = draw(secureRand, tickets)
+  let lottery: { winner: string; pot: number; share: string; tax: number } | null = null
   if (winner) {
     const extra = Math.floor((held(ledger, CENTRAL) * LOTTERY_SHARE) / 100)
     if (extra > 0) ledger.move({ from: CENTRAL, to: POT, amount: extra, kind: "stimulus", note: "lottery" })
@@ -324,15 +335,17 @@ export async function settle(ledger: Ledger) {
     const mine = tickets.find((ticket) => ticket.user === winner)!.count
     // What they paid for their own tickets isn't winnings.
     const tax = levy(ledger, { from: winner, amount: pot - mine * CENTS, rate: config.taxes.winnings, note: "winnings tax", actor: null })
-
-    const sold = tickets.reduce((sum, ticket) => sum + ticket.count, 0)
-    const text = drawLine(secureRand, { winner: `<@${winner}>`, pot: currency(config, pot), share: `${mine} of ${sold}` }) + taxed(config, tax)
-    // Bank can't post where it isn't a member, so fall back to telling the winner directly.
-    await (channel ? post(channel, text).catch(() => post(winner, text)) : post(winner, text)).catch(quietly)
+    lottery = { winner, pot, share: `${mine} of ${tickets.reduce((sum, ticket) => sum + ticket.count, 0)}`, tax }
   }
 
-  // Come back tomorrow by itself while there is a wealth tax to collect or a bond to pay back.
-  if (config.taxes.wealth > 0 || held(ledger, BONDS) > 0) await ledger.storage.setAlarm(nextDraw(Date.now()))
+  const posted = await publish(ledger, { wealth, matured, expired, lottery, honours: award(ledger) })
+  // Bank can't post where it isn't a member, so a winner the paper didn't reach is told directly.
+  if (lottery && !posted) {
+    const text = drawLine(secureRand, { winner: `<@${lottery.winner}>`, pot: currency(config, lottery.pot), share: lottery.share }) + taxed(config, lottery.tax)
+    await ledger.call("chat.postMessage", { channel: lottery.winner, text, unfurl_links: false }).catch((error: unknown) => console.error("announcement failed", error))
+  }
+
+  if (config.games.enabled || config.taxes.wealth > 0 || held(ledger, BONDS) > 0) await ledger.storage.setAlarm(nextDraw(Date.now()))
 }
 
 // ---------- the economy
@@ -348,6 +361,7 @@ export function economy(ledger: Ledger): Economy {
     central: held(ledger, CENTRAL),
     market: held(ledger, MARKET),
     bonds: held(ledger, BONDS),
+    pools: held(ledger, POOLS),
   }
 
   // An entry with no sender created coins and one with no recipient destroyed them. Everything else only moved them.
@@ -387,7 +401,8 @@ export function economy(ledger: Ledger): Economy {
       central: coins(supply.central),
       market: coins(supply.market),
       bonds: coins(supply.bonds),
-      total: coins(supply.people + supply.house + supply.pot + supply.central + supply.market + supply.bonds),
+      pools: coins(supply.pools),
+      total: coins(supply.people + supply.house + supply.pot + supply.central + supply.market + supply.bonds + supply.pools),
     },
     members: active.length,
     growth: { week: coins(days[29]!.supply - days[22]!.supply), month: coins(days[29]!.supply - before) },

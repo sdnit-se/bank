@@ -76,18 +76,21 @@ export function world(games: Partial<Config["games"]> = {}, market: Partial<Conf
     meta: (key: string) => (meta.get(key) ?? null) as never,
     setMeta: (key: string, value: unknown) => void meta.set(key, value),
     call: async (method: string, params: Record<string, unknown> = {}) => (posts.push({ method, ...params }), {} as never),
+    admin: () => false,
   } as unknown as Ledger
 
   setup(sql as never)
   setupMarket(sql as never)
-  for (const id of [A, B]) {
+  /** Someone new, with the starting hundred. */
+  const join = (id: string) => {
     db.query("insert into accounts (id, name, created_at) values (?, ?, ?)").run(id, id.toLowerCase(), clock.now)
     ledger.move({ from: null, to: id, amount: 100 * CENTS, kind: "grant" })
   }
+  for (const id of [A, B]) join(id)
   const print = (to: string, coins: number) => ledger.move({ from: null, to, amount: coins * CENTS, kind: "adjust" })
   const give = (from: string, to: string, coins: number) => ledger.move({ from, to, amount: coins * CENTS, kind: "give" })
   const balance = (id: string) => row(id)!.balance / CENTS
   const total = () => (db.query("select sum(balance) as n from accounts").get() as { n: number }).n / CENTS
   const lowest = () => (db.query("select min(balance) as n from accounts").get() as { n: number }).n / CENTS
-  return { db, ledger, config, posts, print, give, balance, total, lowest, alarm: () => alarm }
+  return { db, ledger, config, posts, join, print, give, balance, total, lowest, alarm: () => alarm }
 }

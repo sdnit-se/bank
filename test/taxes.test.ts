@@ -63,7 +63,7 @@ test("a lottery winner is taxed on the pot less their own tickets", async () => 
   await settle(w.ledger)
   // Now the pot is 40 against 10 of their own: 30 of winnings, 3 of it tax.
   expect([w.balance(A), w.balance(CENTRAL)]).toEqual([127, 3])
-  expect(String(w.posts.at(-1)!.text)).toContain("the taxman took 3 coins")
+  expect(String(w.posts.at(-1)!.text)).toContain("The taxman took 3 coins")
 })
 
 test("a market gain is taxed, a market loss is not", async () => {
