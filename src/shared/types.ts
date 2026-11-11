@@ -150,6 +150,30 @@ export type Economy = {
   days: EconomyDay[]
 }
 
+export type Gambler = { id: string; name: string; image: string | null }
+
+/** Everything the casino has done, for the stats page. Amounts are in coins. */
+export type CasinoStats = {
+  /** Coins staked against the house and on lottery tickets, and coins that changed hands in duels. */
+  staked: number
+  bets: number
+  /** What the house has taken in, less what it has paid out. */
+  houseProfit: number
+  /** What people have been given for doing something useful, to hold the casino's take up against. */
+  gifts: number
+  pot: number
+  tickets: number
+  games: { game: string; plays: number; staked: number; paid: number; wins: number }[]
+  /** Net result per person, best first: winnings and duels won, less stakes and duels lost. */
+  people: (Gambler & { net: number; staked: number; bets: number; wins: number; streak: number })[]
+  biggestWin: (Gambler & { game: string; stake: number; paid: number; at: number }) | null
+  jackpots: number
+  /** Every lottery draw, oldest first. */
+  draws: { at: number; pot: number; winner: Gambler }[]
+  /** The house's running profit over the last 30 days, oldest first. */
+  days: { day: string; profit: number }[]
+}
+
 export type Position = {
   symbol: string
   name: string

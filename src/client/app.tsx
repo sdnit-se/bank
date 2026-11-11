@@ -11,6 +11,7 @@ import { createMemo, createResource, createRoot, createSignal, For, type JSX, Ma
 import { createStore, reconcile, unwrap } from "solid-js/store"
 import { amountText, CENTRAL, currency, HOUSE, INSTITUTIONS, type Config, type CustomEmoji, type Entry, type History, type Me } from "../shared/types"
 import { api, ApiError, BASE, type Person } from "./api"
+import { CasinoView } from "./casino"
 import { EconomyView } from "./economy"
 import { PortfolioView } from "./portfolio"
 
@@ -221,6 +222,7 @@ function Dashboard(props: { me: Me; refresh: () => void }) {
   const [history, historyActions] = createResource(() => api.history())
   const [economy, economyActions] = createResource(() => api.economy())
   const [portfolio] = createResource(() => api.portfolio())
+  const [casino] = createResource(() => api.casino())
   const reload = () => {
     props.refresh()
     leaderboardActions.refetch()
@@ -266,6 +268,9 @@ function Dashboard(props: { me: Me; refresh: () => void }) {
             <Tabs.Trigger value="leaderboard">Leaderboard</Tabs.Trigger>
             <Tabs.Trigger value="activity">Activity</Tabs.Trigger>
             <Tabs.Trigger value="economy">Economy</Tabs.Trigger>
+            <Show when={config().games.enabled}>
+              <Tabs.Trigger value="casino">Casino</Tabs.Trigger>
+            </Show>
             <Show when={config().market.enabled}>
               <Tabs.Trigger value="portfolio">Portfolio</Tabs.Trigger>
             </Show>
@@ -285,6 +290,9 @@ function Dashboard(props: { me: Me; refresh: () => void }) {
           </Match>
           <Match when={tab() === "economy"}>
             <EconomyView config={config()} economy={economy()} />
+          </Match>
+          <Match when={tab() === "casino"}>
+            <CasinoView config={config()} stats={casino()} />
           </Match>
           <Match when={tab() === "portfolio"}>
             <PortfolioView config={config()} portfolio={portfolio()} />

@@ -1,11 +1,11 @@
 // The Economy tab: how many coins exist, where they sit, and how much they move.
 
 import { createMemo, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js"
-import type { Config, Economy, EconomyDay } from "../shared/types"
+import type { Config, Economy } from "../shared/types"
 
-const number = (value: number) => value.toLocaleString("en-US")
-const signed = (value: number) => `${value > 0 ? "+" : value < 0 ? "−" : ""}${number(Math.abs(value))}`
-const date = (day: string) =>
+export const number = (value: number) => value.toLocaleString("en-US")
+export const signed = (value: number) => `${value > 0 ? "+" : value < 0 ? "−" : ""}${number(Math.abs(value))}`
+export const date = (day: string) =>
   new Date(`${day}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })
 
 /** Round tick values covering low to high, in steps of 1, 2 or 5 times a power of ten. */
@@ -19,7 +19,7 @@ function ticks(low: number, high: number) {
   return values
 }
 
-function Tile(props: { label: string; value: string; children?: JSX.Element }) {
+export function Tile(props: { label: string; value: string; children?: JSX.Element }) {
   return (
     <div class="flex flex-col gap-0.5 min-w-0">
       <span class="faint">{props.label}</span>
@@ -32,8 +32,17 @@ function Tile(props: { label: string; value: string; children?: JSX.Element }) {
 const HEIGHT = 176
 const MARGIN = { top: 10, right: 12, bottom: 24, left: 46 }
 
-/** One series over the last 30 days, as a line or as bars from zero. Hovering reads off the day under the pointer. */
-function Chart(props: { days: EconomyDay[]; value: (day: EconomyDay) => number; kind: "line" | "bars"; unit: (value: number) => string }) {
+/**
+ * One series over time, as a line or as bars from zero. Hovering reads off the point under the pointer. `label`
+ * names a point where its date alone doesn't say enough.
+ */
+export function Chart<T extends { day: string }>(props: {
+  days: T[]
+  value: (item: T) => number
+  kind: "line" | "bars"
+  unit: (value: number) => string
+  label?: (item: T) => string
+}) {
   let box!: HTMLDivElement
   const [width, setWidth] = createSignal(680)
   const [hover, setHover] = createSignal<number | null>(null)
@@ -73,7 +82,9 @@ function Chart(props: { days: EconomyDay[]; value: (day: EconomyDay) => number; 
     const offset = event.clientX - box.getBoundingClientRect().left - MARGIN.left
     setHover(Math.max(0, Math.min(props.days.length - 1, Math.floor(offset / band()))))
   }
-  const labelled = () => [0, Math.floor((props.days.length - 1) / 2), props.days.length - 1]
+  const labelled = () => [...new Set([0, Math.floor((props.days.length - 1) / 2), props.days.length - 1])]
+  // With only a few points each label sits under its own mark. With many, the outer two are tucked inward.
+  const anchor = (index: number) => (props.days.length < 10 ? "middle" : index === 0 ? "start" : index === props.days.length - 1 ? "end" : "middle")
 
   return (
     <div ref={box} class="relative select-none" onPointerMove={point} onPointerLeave={() => setHover(null)}>
@@ -89,8 +100,8 @@ function Chart(props: { days: EconomyDay[]; value: (day: EconomyDay) => number; 
           )}
         </For>
         <For each={labelled()}>
-          {(index, position) => (
-            <text x={x(index)} y={HEIGHT - 6} text-anchor={position() === 0 ? "start" : position() === 2 ? "end" : "middle"} class="chart-axis">
+          {(index) => (
+            <text x={x(index)} y={HEIGHT - 6} text-anchor={anchor(index)} class="chart-axis">
               {date(props.days[index]!.day)}
             </text>
           )}
@@ -123,14 +134,14 @@ function Chart(props: { days: EconomyDay[]; value: (day: EconomyDay) => number; 
           }}
         >
           <span class="strong num">{props.unit(values()[hover()!]!)}</span>
-          <span class="faint">{date(props.days[hover()!]!.day)}</span>
+          <span class="faint">{props.label?.(props.days[hover()!]!) ?? date(props.days[hover()!]!.day)}</span>
         </div>
       </Show>
     </div>
   )
 }
 
-function Section(props: { title: string; note: string; children: JSX.Element }) {
+export function Section(props: { title: string; note: string; children: JSX.Element }) {
   return (
     <section class="card overflow-hidden">
       <h2 class="m-0 p-4 pb-2 text-[13px] leading-5 font-[inherit]">

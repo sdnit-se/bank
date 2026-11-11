@@ -5,6 +5,7 @@ import {
   EMOJI_NAME,
   type Account,
   type Admin,
+  type CasinoStats,
   type Config,
   type CustomEmoji,
   type Economy,
@@ -21,6 +22,7 @@ import { market, portfolio, setupMarket, tradeLine } from "./market"
 import { importHistory } from "./migrate"
 import { convertToCents, inCents, money as currency } from "./money"
 import { slack, SlackError } from "./slack"
+import { casinoStats } from "./stats"
 
 export type Install = {
   token: string
@@ -213,6 +215,10 @@ export class Workspace extends DurableObject<Env> {
 
   async economy(): Promise<Economy> {
     return economy(this.ledger())
+  }
+
+  async casino(): Promise<CasinoStats> {
+    return casinoStats(this.ledger())
   }
 
   async portfolio(viewer: Viewer): Promise<Portfolio> {

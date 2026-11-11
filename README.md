@@ -19,6 +19,8 @@ Slack doesn't let apps upload custom emoji, so workspaces add the coin images th
   the house wins beyond its reserve goes to a central bank at the daily draw, which puts a tenth of what it holds
   back into the pot.
 - **An Economy tab**: money supply, GDP (coins given between people), inflation, and who holds what.
+- **A Casino tab**: what the games have done to everyone. Total staked, the house's take, biggest winners and
+  losers, losing streaks, returns by game and every lottery draw, all read off the ledger (`src/server/stats.ts`).
 - **A stock market**, off until an admin opens it: `/bank buy ERIC-B.ST 20`, `/bank sell`, `/bank portfolio`,
   `/bank price`. Real prices from Yahoo Finance, play money. A position follows its share's percentage move. Losses
   stay in the market and pay for gains; it prints only what it lacks. Each trade is taxed to the central bank.
