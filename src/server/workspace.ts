@@ -223,8 +223,8 @@ export class Workspace extends DurableObject<Env> {
 
   /** A click on a button under one of Bank's messages. */
   async interaction(input: { user: string; action: string; value: string }): Promise<SlackMessage> {
-    const ledger = this.ledger()
-    return this.changed((await shopClick(ledger, input)) ?? (await bountyClick(ledger, input)) ?? (await interact(ledger, input)))
+    const [ledger, before] = [this.ledger(), this.lastEntry()]
+    return this.changed((await shopClick(ledger, input)) ?? (await bountyClick(ledger, input)) ?? (await interact(ledger, input)), before)
   }
 
   /** The daily round. */
@@ -233,9 +233,17 @@ export class Workspace extends DurableObject<Env> {
     await refreshFrontPage(this.ledger())
   }
 
-  /** Something public happened: bring the front page up to date, without holding up the answer. */
-  private changed(message: SlackMessage) {
-    if (message.response_type === "in_channel") this.ctx.waitUntil(refreshFrontPage(this.ledger()))
+  /** The newest entry in the ledger, to tell whether an answer moved any coins. */
+  private lastEntry() {
+    return this.sql.exec<{ id: number | null }>("select max(id) as id from entries").one().id ?? 0
+  }
+
+  /**
+   * Brings the front page up to date, without holding up the answer, when something happened that it might show:
+   * coins moved since `before`, or something was posted for everyone to see.
+   */
+  private changed(message: SlackMessage, before: number) {
+    if (message.response_type === "in_channel" || this.lastEntry() !== before) this.ctx.waitUntil(refreshFrontPage(this.ledger()))
     return message
   }
 
@@ -1029,6 +1037,7 @@ export class Workspace extends DurableObject<Env> {
     const fresh = this.sql
       .exec("insert or ignore into events (id, at) values (?, ?)", `command:${params.request}`, Date.now()).rowsWritten
     if (!fresh) return { response_type: "ephemeral", text: "already handled" }
+    const before = this.lastEntry()
     console.log("command", { user: params.user_id, text: params.text.slice(0, 200) })
     const config = this.config()
     // Slack shows one hint per command, so the common ones are also registered on their own: /bank-flip 10 is
@@ -1098,15 +1107,15 @@ export class Workspace extends DurableObject<Env> {
 
     // The games claim their own words before anything with a mention and a number is taken for a gift.
     const played = await play(this.ledger(), { sub, words: words.slice(1), user: params.user_id, channel: params.channel ?? null })
-    if (played) return this.changed(played)
+    if (played) return this.changed(played, before)
     const traded = await market(this.ledger(), { sub, words: words.slice(1), user: params.user_id })
-    if (traded) return this.changed(traded)
+    if (traded) return this.changed(traded, before)
     const saved = await bonds(this.ledger(), { sub, words: words.slice(1), user: params.user_id, channel: params.channel ?? null })
-    if (saved) return this.changed(saved)
+    if (saved) return this.changed(saved, before)
     const posted = await bounties(this.ledger(), { sub, words: words.slice(1), user: params.user_id, channel: params.channel ?? null })
-    if (posted) return this.changed(posted)
+    if (posted) return this.changed(posted, before)
     const sold = await shop(this.ledger(), { sub, words: words.slice(1), user: params.user_id })
-    if (sold) return this.changed(sold)
+    if (sold) return this.changed(sold, before)
     const earned = titles(this.ledger(), { sub, user: params.user_id })
     if (earned) return earned
 
@@ -1129,7 +1138,7 @@ export class Workspace extends DurableObject<Env> {
     return this.changed({
       response_type: "in_channel",
       text: `:${config.symbol}: <@${params.user_id}> gave <@${to}> *${currency(config, amount)}*${note ? ` · ${escape(note)}` : ""}`.trim(),
-    })
+    }, before)
   }
 
   private help(config: Config) {
