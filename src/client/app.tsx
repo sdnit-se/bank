@@ -984,6 +984,49 @@ function SettingsPanel(props: { me: Me; changed: () => void }) {
           </div>
         </Show>
 
+        <div class="flex flex-col gap-2">
+          <div class="strong">Taxes</div>
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <Label text="Gifts, %">
+                <TextInput
+                  class="w-full"
+                  numeric
+                  inputmode="decimal"
+                  value={String(draft.taxes.transfer)}
+                  onInput={(event) => setDraft("taxes", "transfer", Number(event.currentTarget.value.replace(",", ".").replace(/[^0-9.]/g, "")) || 0)}
+                />
+              </Label>
+              <Label text="Winnings, %">
+                <TextInput
+                  class="w-full"
+                  numeric
+                  inputmode="decimal"
+                  value={String(draft.taxes.winnings)}
+                  onInput={(event) => setDraft("taxes", "winnings", Number(event.currentTarget.value.replace(",", ".").replace(/[^0-9.]/g, "")) || 0)}
+                />
+              </Label>
+              <Label text="Wealth, % a week">
+                <TextInput
+                  class="w-full"
+                  numeric
+                  inputmode="decimal"
+                  value={String(draft.taxes.wealth)}
+                  onInput={(event) => setDraft("taxes", "wealth", Number(event.currentTarget.value.replace(",", ".").replace(/[^0-9.]/g, "")) || 0)}
+                />
+              </Label>
+              <Label text="Wealth above">
+                <TextInput
+                  class="w-full"
+                  numeric
+                  inputmode="numeric"
+                  value={String(draft.taxes.wealthAbove)}
+                  onInput={(event) => setDraft("taxes", "wealthAbove", Number(event.currentTarget.value.replace(/[^0-9]/g, "")) || 0)}
+                />
+              </Label>
+          </div>
+          <p class="faint m-0">All paid to the central bank. Zero is off. A taxed gift still counts in full toward what someone has received.</p>
+        </div>
+
         <Show when={draft.games.enabled}>
           <div class="flex flex-col gap-2">
             <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -1175,6 +1218,16 @@ function AdjustPanel(props: { me: Me; changed: () => void }) {
 function PrintPanel(props: { me: Me; changed: () => void }) {
   const [amount, setAmount] = createSignal("")
   const [status, setStatus] = createSignal<{ kind: "error" | "ok"; text: string } | null>(null)
+  const pay = async () => {
+    try {
+      const result = await api.stimulus(Number(amount()))
+      setStatus({ kind: "ok", text: `Paid ${currency(props.me.config, result.each)} each to ${result.people} people.` })
+      setAmount("")
+      props.changed()
+    } catch (error) {
+      setStatus({ kind: "error", text: (error as Error).message })
+    }
+  }
   const run = async (target: string, name: string, sign: 1 | -1) => {
     try {
       await api.adjust(target, sign * Number(amount()), "monetary policy")
@@ -1187,8 +1240,8 @@ function PrintPanel(props: { me: Me; changed: () => void }) {
   }
   return (
     <Panel
-      title="Print money"
-      description="Creates or destroys coins. The house needs a bankroll before it takes bets."
+      title="Monetary policy"
+      description="Print or destroy coins, or split what the central bank holds between everyone."
     >
       <div class="px-4 pb-4 flex flex-col gap-4 max-w-[520px]">
         <Label text="Amount" class="max-w-[112px]">
@@ -1210,6 +1263,9 @@ function PrintPanel(props: { me: Me; changed: () => void }) {
           </Button>
           <Button variant="neutral" disabled={!amount()} onClick={() => run(CENTRAL, "the central bank", -1)}>
             Destroy from the central bank
+          </Button>
+          <Button variant="neutral" disabled={!amount()} onClick={pay}>
+            Pay out as stimulus
           </Button>
           <span class="ml-1">
             <Status value={status()} />

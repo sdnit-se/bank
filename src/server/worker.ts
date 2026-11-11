@@ -255,6 +255,7 @@ async function api(request: Request, env: Env, path: string) {
     const input = await body<{ to: string; amount: number; note?: string }>()
     return ws.adjust(user, input.to, toCents(input.amount) ?? Number.NaN, input.note?.trim() || null)
   }
+  if (route === "POST /admin/stimulus") return ws.stimulus(user, toCents((await body<{ amount: number }>()).amount) ?? Number.NaN)
   if (route === "POST /admin/import") return ws.importHistory(user, (await body<{ entries: Entry[] }>()).entries)
   if (route === "POST /admin/redact") return ws.redact(user, Number((await body<{ id: number }>()).id))
   if (route === "GET /admin/admins") return ws.admins(user)

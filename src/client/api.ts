@@ -43,6 +43,7 @@ export const api = {
   removeAdmin: (id: string) => request("DELETE", "/admin/admins", { id }),
   emoji: () => request<CustomEmoji[]>("GET", "/admin/emoji"),
   redact: (id: number) => request("POST", "/admin/redact", { id }),
+  stimulus: (amount: number) => request<{ each: number; people: number }>("POST", "/admin/stimulus", { amount }),
   importHistory: (entries: Entry[]) => request<{ imported: number; kept: number; reactions: number }>("POST", "/admin/import", { entries }),
   join: () => request<{ joined: number }>("POST", "/admin/join"),
 }

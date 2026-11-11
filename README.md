@@ -25,6 +25,11 @@ Slack doesn't let apps upload custom emoji, so workspaces add the coin images th
   `/bank price`. Real prices from Yahoo Finance, play money. A position follows its share's percentage move. Losses
   stay in the market and pay for gains; it prints only what it lacks. Each trade is taxed to the central bank.
   `src/server/market.ts`.
+- **Taxes**, all off until an admin sets a rate: on gifts, on winnings and market gains, and weekly on wealth above
+  a threshold. All of it goes to the central bank, which an admin can pay back out to everyone as a stimulus.
+  `src/server/taxes.ts`.
+- **Recognition kept apart from winnings.** The leaderboard ranks by coins received from colleagues first, with
+  "richest" as a separate view, and everyone's card says how much came from people, the casino and the market.
 - **Cents.** The ledger counts in hundredths of a coin (`src/server/money.ts`), so `/bank give @someone 0.5` works and
   a tax or a share price can move less than a whole coin. People still type and read coins; reactions and lottery
   tickets stay whole. A ledger kept in whole coins is converted once, on the first start of this version.

@@ -17,13 +17,14 @@ import {
   type Portfolio,
   toCents,
 } from "../shared/types"
-import { casinoHelp, economy, historyLine, play, settle, setup, type Ledger } from "./casino"
+import { casinoHelp, economy, historyLine, play, schedule, settle, setup, type Ledger } from "./casino"
 import type { Env } from "./env"
 import { market, marketHelp, marketStats, portfolio, setupMarket, tradeLine } from "./market"
 import { importHistory } from "./migrate"
 import { convertToCents, inCents, money as currency } from "./money"
 import { slack, SlackError } from "./slack"
 import { casinoStats, sources } from "./stats"
+import { levy, stimulus } from "./taxes"
 
 export type Install = {
   token: string
@@ -263,6 +264,7 @@ export class Workspace extends DurableObject<Env> {
     if (!EMOJI_NAME.test(config.symbol)) config.symbol = defaultConfig.symbol
     config.games = { ...defaultConfig.games, ...config.games }
     config.market = { ...defaultConfig.market, ...config.market }
+    config.taxes = { ...defaultConfig.taxes, ...config.taxes }
     return config
   }
 
@@ -770,6 +772,8 @@ export class Workspace extends DurableObject<Env> {
     // A client from before the games existed sends none, and shouldn't switch them off by saving.
     const games = input.games ?? this.settings().games
     const market = input.market ?? this.settings().market
+    const taxes = input.taxes ?? this.settings().taxes
+    const rate = (value: unknown, most: number) => Math.max(0, Math.min(most, Math.round(Number(value) * 10) / 10 || 0))
     const whole = (value: unknown, least: number) => Math.max(least, Math.min(1_000_000, Math.floor(Number(value) || 0)))
     const config: Config = {
       singular: clean(input.singular, 32).replace(/[<>&*_~`]/g, "") || defaultConfig.singular,
@@ -781,9 +785,12 @@ export class Workspace extends DurableObject<Env> {
       emoji,
       notify: Boolean(input.notify),
       games: { enabled: Boolean(games.enabled), maxBet: whole(games.maxBet, 1), reserve: whole(games.reserve, 0) },
-      market: { enabled: Boolean(market.enabled), fee: Math.max(0, Math.min(25, Math.round(Number(market.fee) * 10) / 10 || 0)) },
+      market: { enabled: Boolean(market.enabled), fee: rate(market.fee, 25) },
+      taxes: { transfer: rate(taxes.transfer, 50), winnings: rate(taxes.winnings, 90), wealth: rate(taxes.wealth, 50), wealthAbove: whole(taxes.wealthAbove, 0) },
     }
     this.setMeta("config", config)
+    // The daily alarm settles the house, draws the lottery and collects the wealth tax, so make sure one is coming.
+    if (config.games.enabled || config.taxes.wealth > 0) await schedule(this.ledger())
     return config
   }
 
@@ -802,6 +809,14 @@ export class Workspace extends DurableObject<Env> {
         : this.move({ from: target, to: null, amount: -amount, kind: "adjust", note, actor: viewer.id })
     if (!result.ok) throw new Error(result.reason === "insufficient" ? `they only have ${result.balance / CENTS}` : "unknown person")
     return { ok: true }
+  }
+
+  /** Pays an equal share of `amount` from the central bank's reserves to everyone. */
+  async stimulus(viewer: Viewer, amount: number) {
+    this.assertAdmin(viewer)
+    const result = this.ctx.storage.transactionSync(() => stimulus(this.ledger(), amount, viewer.id))
+    console.log("stimulus", { by: viewer.id, ...result })
+    return { each: result.each / CENTS, people: result.people }
   }
 
   /** Swaps the balance-copying adjustments from moving in for the real history of the bank this one replaced. */
@@ -946,6 +961,7 @@ export class Workspace extends DurableObject<Env> {
     if (recipient.bot) return { ok: false, message: `bots can't hold ${config.plural}` }
     if (recipient.gone) return { ok: false, message: `that account is no longer active` }
     const result = this.move({ from, to, amount, kind, note, actor: from, link })
+    if (result.ok) levy(this.ledger(), { from: to, amount, rate: config.taxes.transfer, note: "transfer tax", actor: from })
     if (!result.ok) {
       return {
         ok: false,

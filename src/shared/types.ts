@@ -14,6 +14,17 @@ export type Market = {
   fee: number
 }
 
+/** Percentages, all paid to the central bank. Zero is off. */
+export type Taxes = {
+  /** Of every gift and reaction, out of what the recipient keeps. */
+  transfer: number
+  /** Of the profit on a casino win or a market sale. */
+  winnings: number
+  /** Each week, of whatever someone holds above `wealthAbove`. */
+  wealth: number
+  wealthAbove: number
+}
+
 export type Config = {
   singular: string
   plural: string
@@ -24,6 +35,7 @@ export type Config = {
   notify: boolean
   games: Games
   market: Market
+  taxes: Taxes
 }
 
 export const defaultConfig: Config = {
@@ -40,6 +52,7 @@ export const defaultConfig: Config = {
   notify: true,
   games: { enabled: false, maxBet: 25, reserve: 500 },
   market: { enabled: false, fee: 1 },
+  taxes: { transfer: 0, winnings: 0, wealth: 0, wealthAbove: 200 },
 }
 
 /**
@@ -145,10 +158,14 @@ export type EconomyDay = {
   gifts: number
   /** Coins staked on games that day. */
   bets: number
+  /** Taxes and fees paid that day. */
+  taxes: number
 }
 
 export type Economy = {
   supply: { people: number; house: number; pot: number; central: number; market: number; total: number }
+  /** Taxes and fees paid to the central bank over the last 7 and 30 days. */
+  taxes: { week: number; month: number }
   members: number
   /** Coins created minus coins destroyed, over the last 7 and 30 days. */
   growth: { week: number; month: number }

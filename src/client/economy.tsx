@@ -163,7 +163,7 @@ export function EconomyView(props: { config: Config; economy: Economy | undefine
           <div class="flex flex-col gap-4">
             <section class="card p-5 grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-5">
               <Tile label="Money supply" value={number(economy().supply.total)}>
-                {number(economy().supply.people)} held by {economy().members} people
+                {number(economy().supply.people)} with {economy().members} people, {number(economy().supply.total - economy().supply.people)} elsewhere
               </Tile>
               <Tile label="GDP · 7 days" value={number(economy().gdp.week)}>
                 {number(economy().gdp.month)} in 30 days
@@ -172,7 +172,7 @@ export function EconomyView(props: { config: Config; economy: Economy | undefine
                 {signed(economy().growth.month)} {props.config.plural}
               </Tile>
               <Tile label="Central bank" value={number(economy().supply.central)}>
-                house {number(economy().supply.house)} · pot {number(economy().supply.pot)} · market {number(economy().supply.market)}
+                {number(economy().taxes.month)} in taxes, 30 days
               </Tile>
               <Tile label="Casino · 7 days" value={number(economy().turnover.week)}>
                 {number(economy().turnover.month)} in 30 days

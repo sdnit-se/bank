@@ -15,6 +15,7 @@ import { CENTRAL, CENTS, MARKET, toCents, type Config, type MarketStats, type Po
 import type { Ledger } from "./casino"
 import { brokeLine, secureRand, type Rand } from "./games"
 import { money } from "./money"
+import { levy, taxed as taxNote } from "./taxes"
 
 export type Quote = {
   symbol: string
@@ -265,6 +266,7 @@ export async function market(ledger: Ledger, input: { sub: string; words: string
   else ledger.sql.exec("update positions set units = units * ?, cost = cost - ? where user_id = ? and symbol = ?", 1 - share, basis, input.user, found.symbol)
 
   const profit = gross - basis
+  const tax = levy(ledger, { from: input.user, amount: profit, rate: config.taxes.winnings, note: "gains tax" })
   const lines = profit > 0 ? SOLD_UP : profit < 0 ? SOLD_DOWN : SOLD_FLAT
   return loud(
     `:chart_with_${profit < 0 ? "downwards" : "upwards"}_trend: ${say(secureRand, lines, {
@@ -273,7 +275,7 @@ export async function market(ledger: Ledger, input: { sub: string; words: string
       symbol: `*${found.symbol}*`,
       change: percent(basis > 0 ? gross / basis - 1 : 0),
       profit: coins(Math.abs(profit)),
-    })}`,
+    })}${taxNote(config, tax)}`,
   )
 }
 
