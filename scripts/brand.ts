@@ -1,63 +1,73 @@
-// Draws Shebang's own art for the bank: the coin, the Slack app icon and the link-preview card.
-// Run with `bun scripts/brand.ts`. It needs the JetBrains Mono font for the #! on the coin.
-import sharp from "sharp"
-import { mkdirSync } from "node:fs"
+// Draws the bank's art in Shebang's design system: the coin, the Slack app icon and the link-preview card.
+// Run with `bun scripts/brand.ts`.
+//
+// The logo is art/shebang/logo.svg exactly as the brand manual supplies it, never redrawn or stretched. The colours
+// and the flat, outlined, extruded shapes follow the manual too, and the type is Inter, which the app already ships.
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join, resolve } from "node:path"
 
-const MONO = "JetBrainsMono Nerd Font, JetBrains Mono, monospace"
+const BURGUNDY = "#19000b"
+const IVORY = "#f2eddf"
+const YELLOW = "#ffdf80"
+const RED = "#eb7254"
+const BLUE = "#47adb2"
 
-/** A struck gold coin with #! on it, drawn in a 512 box so it can be placed and scaled anywhere. */
-function coin(id: string) {
-  const ticks = Array.from({ length: 72 }, (_, index) => {
-    const angle = (index / 72) * Math.PI * 2
-    const [cos, sin] = [Math.cos(angle), Math.sin(angle)]
-    return `<line x1="${256 + cos * 222}" y1="${256 + sin * 222}" x2="${256 + cos * 240}" y2="${256 + sin * 240}"/>`
-  }).join("")
+// Inter isn't installed system-wide, so point the renderer at the copy in node_modules before it starts.
+const fonts = join(tmpdir(), "bank-fonts.conf")
+writeFileSync(
+  fonts,
+  `<?xml version="1.0"?><!DOCTYPE fontconfig SYSTEM "fonts.dtd"><fontconfig><dir>${resolve("node_modules/@opencode/ui/src/assets/fonts")}</dir><include ignore_missing="yes">/etc/fonts/fonts.conf</include></fontconfig>`,
+)
+// The renderer reads this from the environment it was started with, so start again with it set.
+if (process.env.FONTCONFIG_FILE !== fonts) {
+  const again = Bun.spawnSync([process.execPath, ...process.argv.slice(1)], {
+    env: { ...process.env, FONTCONFIG_FILE: fonts },
+    stdout: "inherit",
+    stderr: "inherit",
+  })
+  process.exit(again.exitCode)
+}
+const { default: sharp } = await import("sharp")
+
+const logo = `data:image/svg+xml;base64,${readFileSync("art/shebang/logo.svg").toString("base64")}`
+/** The logo's own proportions: 235.42 wide to 190.42 tall. */
+const LOGO = 190.42 / 235.42
+
+/**
+ * A coin seen face on: an ivory face inside a yellow rim, pushed out toward the bottom right the way the manual's
+ * boxes are. The logo sits in the middle with clear space around it.
+ */
+function coin(cx: number, cy: number, r: number, edge: string) {
+  const line = r * 0.03
+  const depth = r * 0.16
+  const wide = r * 1.02
   return `
-    <defs>
-      <linearGradient id="${id}-face" x1="0.15" y1="0.05" x2="0.85" y2="0.95">
-        <stop offset="0" stop-color="#ffe9a3"/><stop offset="0.45" stop-color="#f2bd3b"/><stop offset="1" stop-color="#b9780f"/>
-      </linearGradient>
-      <linearGradient id="${id}-well" x1="0.15" y1="0.05" x2="0.85" y2="0.95">
-        <stop offset="0" stop-color="#d9981c"/><stop offset="0.55" stop-color="#f0b930"/><stop offset="1" stop-color="#ffdf85"/>
-      </linearGradient>
-      <linearGradient id="${id}-edge" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="#c98a14"/><stop offset="1" stop-color="#7a4c06"/>
-      </linearGradient>
-    </defs>
-    <ellipse cx="256" cy="282" rx="244" ry="244" fill="url(#${id}-edge)"/>
-    <circle cx="256" cy="256" r="244" fill="url(#${id}-face)"/>
-    <g stroke="#a86c0c" stroke-width="5" stroke-linecap="round" opacity="0.55">${ticks}</g>
-    <circle cx="256" cy="256" r="204" fill="#9c6408"/>
-    <circle cx="256" cy="259" r="198" fill="url(#${id}-well)"/>
-    <g font-family="${MONO}" font-weight="700" font-style="normal" font-size="236" text-anchor="middle" letter-spacing="-14">
-      <text x="250" y="346" fill="#ffe9a3">#!</text>
-      <text x="256" y="338" fill="#7d4f06">#!</text>
-      <text x="253" y="341" fill="#9a6509">#!</text>
-    </g>`
+    <line x1="${cx}" y1="${cy}" x2="${cx + depth}" y2="${cy + depth}" stroke="${BURGUNDY}" stroke-width="${2 * r + line}" stroke-linecap="round"/>
+    <line x1="${cx}" y1="${cy}" x2="${cx + depth}" y2="${cy + depth}" stroke="${edge}" stroke-width="${2 * r - line}" stroke-linecap="round"/>
+    <circle cx="${cx}" cy="${cy}" r="${r}" fill="${YELLOW}" stroke="${BURGUNDY}" stroke-width="${line}"/>
+    <circle cx="${cx}" cy="${cy}" r="${r * 0.8}" fill="${IVORY}" stroke="${BURGUNDY}" stroke-width="${line * 0.8}"/>
+    <image href="${logo}" x="${cx - wide / 2}" y="${cy - (wide * LOGO) / 2}" width="${wide}" height="${wide * LOGO}"/>`
 }
 
-const INK = "#101114"
-
 const icon = `<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
-  <defs><radialGradient id="glow" cx="0.5" cy="0.42" r="0.75"><stop offset="0" stop-color="#262a33"/><stop offset="1" stop-color="${INK}"/></radialGradient></defs>
-  <rect width="1024" height="1024" fill="url(#glow)"/>
-  <g transform="translate(152 140) scale(1.40625)">${coin("icon")}</g>
+  <rect width="1024" height="1024" fill="${BURGUNDY}"/>
+  ${coin(484, 484, 340, RED)}
 </svg>`
 
 const card = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
-  <defs><radialGradient id="glow" cx="0.78" cy="0.5" r="0.7"><stop offset="0" stop-color="#2a2e38"/><stop offset="1" stop-color="${INK}"/></radialGradient></defs>
-  <rect width="1200" height="630" fill="url(#glow)"/>
-  <g transform="translate(640 86) rotate(-8 220 220) scale(0.84)">${coin("back")}</g>
-  <g transform="translate(724 138) scale(0.84)">${coin("front")}</g>
-  <g font-family="${MONO}" font-style="normal" fill="#f4f1e8">
-    <text x="84" y="252" font-size="132" font-weight="700" letter-spacing="-6">bank</text>
-    <text x="88" y="322" font-size="38" font-weight="500" fill="#c9c5b8">a tiny currency</text>
-    <text x="88" y="370" font-size="38" font-weight="500" fill="#c9c5b8">for our Slack</text>
-    <text x="88" y="532" font-size="30" font-weight="500" fill="#f2bd3b">#! labs.shebang.se/bank</text>
+  <rect width="1200" height="630" fill="${BURGUNDY}"/>
+  ${coin(1010, 190, 150, BLUE)}
+  ${coin(880, 372, 196, RED)}
+  <g font-family="Inter" fill="${IVORY}">
+    <text x="80" y="270" font-size="150" font-weight="700" letter-spacing="-4">BANK</text>
+    <text x="84" y="344" font-size="40" font-weight="400">A tiny <tspan fill="${YELLOW}" font-weight="700">currency</tspan> for our Slack.</text>
+    <text x="84" y="540" font-size="28" font-weight="700" fill="${RED}">labs.shebang.se/bank</text>
   </g>
 </svg>`
 
-const favicon = `<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 -14 512 540">${coin("favicon")}</svg>`
+// The favicon is the coin alone, with a little room for its edge.
+const favicon = `<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">${coin(236, 236, 216, RED)}</svg>`
 
 mkdirSync("art/shebang", { recursive: true })
 for (const [svg, output, size] of [
@@ -65,6 +75,6 @@ for (const [svg, output, size] of [
   [card, "public/og.png", 1200],
   [favicon, "public/coin.png", 256],
 ] as const) {
-  await sharp(Buffer.from(svg)).resize(size).png({ compressionLevel: 9 }).toFile(output)
+  await sharp(Buffer.from(svg), { density: 144 }).resize(size).png({ compressionLevel: 9 }).toFile(output)
   console.log(output)
 }

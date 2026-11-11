@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Layer_1" data-name="Layer 1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 235.42 190.42">
+  <defs>
+    <style>
+      .cls-1 {
+        fill: #ffdf80;
+      }
+
+      .cls-1, .cls-2, .cls-3 {
+        stroke: #19000b;
+        stroke-linejoin: round;
+        stroke-width: 1.42px;
+      }
+
+      .cls-2 {
+        fill: #47adb2;
+      }
+
+      .cls-3 {
+        fill: #eb7254;
+      }
+    </style>
+    <symbol id="Shebang_symbol_NEW" data-name="Shebang symbol NEW" viewBox="0 0 235.42 190.42">
+      <g>
+        <polygon class="cls-3" points="117.71 45.71 99.78 45.71 99.78 18.71 117.71 .71 117.71 45.71"/>
+        <polygon class="cls-3" points="99.78 81.81 99.78 126.71 54.64 126.71 54.64 .71 36.71 18.71 36.71 45.71 18.71 45.71 .71 63.71 36.71 63.71 36.71 126.71 .71 126.71 .71 144.71 36.71 144.71 36.71 189.71 54.64 189.71 54.64 144.71 99.78 144.71 99.78 189.71 117.71 189.71 117.71 63.81 99.78 81.81"/>
+        <g>
+          <rect class="cls-1" x="216.71" y=".71" width="18" height="136.37"/>
+          <polygon class="cls-2" points="198.71 18.71 216.64 .71 216.64 137.08 198.71 118.71 198.71 18.71"/>
+          <g>
+            <polygon class="cls-1" points="54.71 189.71 72.64 171.71 72.64 144.71 54.71 144.71 54.71 189.71"/>
+            <polygon class="cls-1" points="171.71 63.71 171.71 45.71 135.71 45.71 135.71 .71 117.78 .71 117.78 45.71 72.64 45.71 72.64 .71 54.71 .71 54.71 126.6 72.64 108.6 72.64 63.71 117.78 63.71 117.78 189.71 135.71 171.71 135.71 144.71 153.71 144.71 171.71 126.71 135.71 126.71 135.71 63.71 171.71 63.71"/>
+          </g>
+        </g>
+        <rect class="cls-2" x=".71" y="63.71" width="36" height="18"/>
+        <polygon class="cls-2" points="117.71 63.78 72.71 63.78 72.71 81.78 99.71 81.78 117.71 63.78"/>
+        <polygon class="cls-2" points="171.34 63.78 135.71 63.78 135.71 81.78 153.34 81.78 171.34 63.78"/>
+        <polygon class="cls-2" points="36.71 108.71 18.71 108.71 .71 126.71 36.71 126.71 36.71 108.71"/>
+        <polygon class="cls-2" points="99.71 108.71 72.71 108.71 54.71 126.71 99.71 126.71 99.71 108.71"/>
+        <rect class="cls-2" x="135.71" y="108.71" width="36" height="18"/>
+        <circle class="cls-3" cx="216.71" cy="171.71" r="18"/>
+      </g>
+    </symbol>
+  </defs>
+  <use width="235.42" height="190.42" xlink:href="#Shebang_symbol_NEW"/>
+</svg>
