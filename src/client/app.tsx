@@ -1008,11 +1008,12 @@ function SettingsPanel(props: { me: Me; changed: () => void }) {
           </Numbers>
         </Show>
 
-        <Numbers title="Taxes" note="All paid to the central bank. Zero is off. A taxed gift still counts in full toward what someone has received.">
+        <Numbers title="Taxes and interest" note="Taxes go to the central bank, and interest is paid from what it holds. Zero is off. A taxed gift still counts in full toward what someone has received.">
           <NumberField decimal label="Gifts, %" value={draft.taxes.transfer} set={(value) => setDraft("taxes", "transfer", value)} />
           <NumberField decimal label="Winnings, %" value={draft.taxes.winnings} set={(value) => setDraft("taxes", "winnings", value)} />
           <NumberField decimal label="Wealth, % a week" value={draft.taxes.wealth} set={(value) => setDraft("taxes", "wealth", value)} />
           <NumberField label="Wealth above" value={draft.taxes.wealthAbove} set={(value) => setDraft("taxes", "wealthAbove", value)} />
+          <NumberField decimal label="Interest, % a week" value={draft.taxes.interest} set={(value) => setDraft("taxes", "interest", value)} />
         </Numbers>
 
         <div class="flex flex-col gap-2">
@@ -1203,7 +1204,7 @@ function PrintPanel(props: { me: Me; changed: () => void }) {
   return (
     <Panel
       title="Monetary policy"
-      description="Print or destroy coins, or split what the central bank holds between everyone."
+      description="Print or destroy coins, or split what the central bank holds between everyone. Deficits are a state of mind."
     >
       <div class="px-4 pb-4 flex flex-col gap-4 max-w-[520px]">
         <Label text="Amount" class="max-w-[112px]">

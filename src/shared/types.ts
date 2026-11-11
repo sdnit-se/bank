@@ -23,6 +23,8 @@ export type Taxes = {
   /** Each week, of whatever someone holds above `wealthAbove`. */
   wealth: number
   wealthAbove: number
+  /** Not a tax: each week, what the central bank pays on whatever someone holds, out of its reserves. */
+  interest: number
 }
 
 export type Config = {
@@ -52,7 +54,7 @@ export const defaultConfig: Config = {
   notify: true,
   games: { enabled: false, maxBet: 25, reserve: 500 },
   market: { enabled: false, fee: 1 },
-  taxes: { transfer: 0, winnings: 0, wealth: 0, wealthAbove: 200 },
+  taxes: { transfer: 0, winnings: 0, wealth: 0, wealthAbove: 200, interest: 0 },
 }
 
 /**

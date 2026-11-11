@@ -71,14 +71,14 @@ export function MarketBoard(props: { stats: MarketStats | undefined }) {
               losses, waiting to be someone's gain
             </Tile>
             <Tile label="Printed" value={number(stats().printed)}>
-              for gains it couldn't cover
+              for gains it couldn't cover. MMT says it's fine
             </Tile>
             <Tile label="Fees" value={number(stats().fees)}>
               to the central bank
             </Tile>
           </section>
-          <Ranked title="Wolves" note="up the most" people={stats().investors.filter((person) => person.result > 0).slice(0, 5)} amount={(person) => person.result} detail={trades} />
-          <Ranked title="Bagholders" note="down the most" people={[...stats().investors].reverse().filter((person) => person.result < 0).slice(0, 5)} amount={(person) => person.result} detail={trades} />
+          <Ranked title="Smart money" note="up the most" people={stats().investors.filter((person) => person.result > 0).slice(0, 5)} amount={(person) => person.result} detail={trades} />
+          <Ranked title="Greater fools" note="down the most" people={[...stats().investors].reverse().filter((person) => person.result < 0).slice(0, 5)} amount={(person) => person.result} detail={trades} />
           <Show when={stats().symbols.length}>
             <section class="card overflow-hidden">
               <table class="chart-table">

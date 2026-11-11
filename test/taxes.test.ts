@@ -3,7 +3,7 @@
 import { afterEach, expect, test } from "bun:test"
 import { play, settle } from "../src/server/casino"
 import { market } from "../src/server/market"
-import { collectWealth, levy, stimulus } from "../src/server/taxes"
+import { collectWealth, levy, payInterest, stimulus } from "../src/server/taxes"
 import { CENTRAL, CENTS, HOUSE, nextDraw, POT } from "../src/shared/types"
 import { A, B, clock, frozen, world } from "./world"
 
@@ -124,4 +124,20 @@ test("a stimulus splits the central bank's reserves equally, and only what it ho
   // The odd cent stays behind.
   expect([w.balance(A), w.balance(B), w.balance(CENTRAL)]).toEqual([125, 125, 0.01])
   expect(() => stimulus(w.ledger, 1, A)).toThrow("less than a cent each")
+})
+
+test("interest is paid weekly from the central bank's reserves, and shared out when they fall short", () => {
+  const w = taxing({ interest: 10 })
+  w.print(A, 100)
+  w.print(CENTRAL, 40)
+  expect(payInterest(w.ledger)).toBeNull()
+  clock.now += 8 * DAY
+  // A holds 200 and B 100, so 20 and 10 are due and the reserves cover it.
+  expect(payInterest(w.ledger)).toEqual({ paid: 30 * CENTS, people: 2 })
+  expect([w.balance(A), w.balance(B), w.balance(CENTRAL)]).toEqual([220, 110, 10])
+  clock.now += 8 * DAY
+  // Now 22 and 11 are due against 10 in reserve: everyone gets the same fraction, and nothing is printed.
+  expect(payInterest(w.ledger)).toEqual({ paid: 999, people: 2 })
+  expect([w.balance(A), w.balance(B), w.balance(CENTRAL)]).toEqual([226.66, 113.33, 0.01])
+  expect(w.total()).toBe(340)
 })

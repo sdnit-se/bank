@@ -1,9 +1,10 @@
-// Taxes, all of them paid to the central bank, and the stimulus that pays the central bank back out.
+// Taxes, all of them paid to the central bank, and the interest and stimulus that pay the central bank back out.
 //
 // - transfer: a share of every gift and reaction, taken from what the recipient gets to keep. The gift still counts
 //   in full toward what they have been given, so being thanked is worth the same on the leaderboard.
 // - winnings: a share of the profit on a casino win or a sale in the market. Stakes and losses are never taxed.
 // - wealth: once a week, a share of whatever anyone holds above a threshold.
+// - interest: once a week, a share of whatever anyone holds, paid to them from the central bank's reserves.
 //
 // Every rate is a percentage and starts at zero. Amounts here are in cents, like the rest of the ledger.
 
@@ -26,20 +27,18 @@ export function taxed(config: Config, tax: number) {
   return tax > 0 ? ` the taxman took ${money(config, tax)}.` : ""
 }
 
-/**
- * Collects the wealth tax if a week has passed since the last time. Turning the tax on starts the week, so nobody is
- * taxed the moment an admin saves the setting.
- */
+/** True once a week for each `key`. The first time only starts the week, so nothing happens the moment a rate is set. */
+function weekIsUp(ledger: Ledger, key: string, now: number) {
+  const last = ledger.meta<number>(key)
+  if (last !== null && now - last < WEEK) return false
+  ledger.setMeta(key, now)
+  return last !== null
+}
+
+/** Collects the wealth tax if a week has passed since the last time. */
 export function collectWealth(ledger: Ledger, now = Date.now()) {
   const config = ledger.config()
-  if (!(config.taxes.wealth > 0)) return null
-  const last = ledger.meta<number>("wealth_taxed")
-  if (last === null) {
-    ledger.setMeta("wealth_taxed", now)
-    return null
-  }
-  if (now - last < WEEK) return null
-  ledger.setMeta("wealth_taxed", now)
+  if (!(config.taxes.wealth > 0) || !weekIsUp(ledger, "wealth_taxed", now)) return null
   const rich = ledger.sql
     .exec<{ id: string; balance: number }>("select id, balance from accounts where bot = 0 and gone = 0 and balance > ? order by balance desc", config.taxes.wealthAbove)
     .toArray()
@@ -51,6 +50,26 @@ export function collectWealth(ledger: Ledger, now = Date.now()) {
     collected += tax
   }
   return { collected, payers }
+}
+
+/**
+ * Pays a week's interest on what everyone holds, out of the central bank's reserves. It never prints: when the
+ * reserves fall short, everyone gets the same fraction of what they were due.
+ */
+export function payInterest(ledger: Ledger, now = Date.now()) {
+  const rate = ledger.config().taxes.interest
+  if (!(rate > 0) || !weekIsUp(ledger, "interest_paid", now)) return null
+  const savers = ledger.sql.exec<{ id: string; balance: number }>("select id, balance from accounts where bot = 0 and gone = 0 and balance > 0 order by id").toArray()
+  const due = savers.reduce((sum, saver) => sum + Math.round((saver.balance * rate) / 100), 0)
+  const share = Math.min(1, due > 0 ? (ledger.row(CENTRAL)?.balance ?? 0) / due : 0)
+  let [paid, people] = [0, 0]
+  for (const saver of savers) {
+    const amount = Math.floor(Math.round((saver.balance * rate) / 100) * share)
+    if (amount <= 0 || !ledger.move({ from: CENTRAL, to: saver.id, amount, kind: "stimulus", note: "interest" }).ok) continue
+    paid += amount
+    people++
+  }
+  return { paid, people }
 }
 
 /** Splits `total` from the central bank's reserves equally between everyone active. Returns what each person got. */

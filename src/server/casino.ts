@@ -31,7 +31,7 @@ import {
 import { held, loud, quiet, tooFast, type Ledger, type Message } from "./ledger"
 import { money as currency } from "./money"
 import { answerDuel, deal, hasHand, offerDuel, owed, playHand } from "./tables"
-import { collectWealth, levy, taxed } from "./taxes"
+import { collectWealth, levy, payInterest, taxed } from "./taxes"
 
 const DAY = 24 * 60 * 60 * 1000
 /** The share of the central bank's reserves, in percent, that it adds to each lottery draw. */
@@ -319,6 +319,11 @@ export async function settle(ledger: Ledger) {
     if (refill > 0) ledger.move({ from: CENTRAL, to: HOUSE, amount: refill, kind: "stimulus", note: "house reserve" })
   }
 
+  const interest = payInterest(ledger)
+  if (interest && interest.paid > 0 && channel) {
+    await post(channel, `:classical_building: the central bank paid *${currency(config, interest.paid)}* in interest to ${interest.people} savers. money makes money.`).catch(quietly)
+  }
+
   const tickets = ledger.sql.exec<{ user: string; count: number }>("select id as user, count from tickets order by id").toArray()
   const winner = draw(secureRand, tickets)
   if (winner) {
@@ -337,7 +342,7 @@ export async function settle(ledger: Ledger) {
     await (channel ? post(channel, text).catch(() => post(winner, text)) : post(winner, text)).catch(quietly)
   }
 
-  if (config.taxes.wealth > 0) await ledger.storage.setAlarm(nextDraw(Date.now()))
+  if (config.taxes.wealth > 0 || config.taxes.interest > 0) await ledger.storage.setAlarm(nextDraw(Date.now()))
 }
 
 // ---------- the economy

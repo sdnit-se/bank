@@ -792,11 +792,11 @@ export class Workspace extends DurableObject<Env> {
       notify: Boolean(input.notify),
       games: { enabled: Boolean(games.enabled), maxBet: whole(games.maxBet, 1), reserve: whole(games.reserve, 0) },
       market: { enabled: Boolean(market.enabled), fee: rate(market.fee, 25) },
-      taxes: { transfer: rate(taxes.transfer, 50), winnings: rate(taxes.winnings, 90), wealth: rate(taxes.wealth, 50), wealthAbove: whole(taxes.wealthAbove, 0) },
+      taxes: { transfer: rate(taxes.transfer, 50), winnings: rate(taxes.winnings, 90), wealth: rate(taxes.wealth, 50), wealthAbove: whole(taxes.wealthAbove, 0), interest: rate(taxes.interest, 50) },
     }
     this.setMeta("config", config)
-    // The daily alarm settles the house, draws the lottery and collects the wealth tax, so make sure one is coming.
-    if (config.games.enabled || config.taxes.wealth > 0) await schedule(this.ledger())
+    // The daily alarm settles the house, draws the lottery, collects the wealth tax and pays interest.
+    if (config.games.enabled || config.taxes.wealth > 0 || config.taxes.interest > 0) await schedule(this.ledger())
     return config
   }
 
