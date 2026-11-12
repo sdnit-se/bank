@@ -91,6 +91,10 @@ const COPY = {
     () => `The task has officially been ignored long enough to get a budget.`,
   ],
   abandoned: [() => `Thirty days, no takers, coins returned. The task remains, as tasks do.`],
+  begged: [
+    () => `Everyone involved has agreed never to mention it again, which is why it's in the paper.`,
+    () => `The donors would like it known that they expect nothing in return, and will be bringing it up for weeks.`,
+  ],
   bought: [() => `Finally, a use for the currency that isn't losing it.`, () => `The coins bought an actual thing. Nobody saw that coming, least of all the coins.`],
 } satisfies Record<string, Line[]>
 
@@ -116,6 +120,7 @@ export async function publish(ledger: Ledger, round: Round, now = Date.now()) {
   const day = { bets: 0, staked: 0, thanks: 0, duels: 0, trades: 0, traded: 0, lent: 0, robbed: 0, crew: 0, pooled: 0 }
   const bought: string[] = []
   const collected: { to: string; amount: number; task: string }[] = []
+  const begged = new Map<string, number>()
   const callers = new Set<string>()
   const rows = ledger.sql
     .exec<{ kind: string; from_id: string | null; to_id: string | null; amount: number; note: string | null }>("select kind, from_id, to_id, amount, note from entries where at > ? order by id", since)
@@ -133,6 +138,8 @@ export async function publish(ledger: Ledger, round: Round, now = Date.now()) {
     } else if (row.kind === "payout" && row.from_id === POOLS && row.note === "the office pool") {
       callers.add(row.to_id!)
       day.pooled += row.amount
+    } else if (row.kind === "alms") {
+      add(begged, row.to_id!, row.amount)
     } else if (row.kind === "give" && row.from_id === BOUNTIES) {
       collected.push({ to: row.to_id!, amount: row.amount, task: row.note ?? "a bounty" })
     } else if (row.kind === "give" || row.kind === "reaction") {
@@ -185,6 +192,10 @@ export async function publish(ledger: Ledger, round: Round, now = Date.now()) {
     const total = [...thanked.values()].reduce((sum, amount) => sum + amount, 0)
     const [a, b] = mutual[0] ?? []
     story(`${coins(total)} given as thanks`, line(COPY.thanks, { who: at(top[0]), amount: coins(top[1]) }), a && b && line(COPY.mutual, { a: at(a), b: at(b) }))
+  }
+  if (begged.size) {
+    const total = [...begged.values()].reduce((sum, amount) => sum + amount, 0)
+    story(`${names([...begged.keys()])} begged, and ${begged.size === 1 ? "was" : "were"} spared ${coins(total)}`, line(COPY.begged))
   }
   for (const bounty of collected.slice(0, 3)) story(`${at(bounty.to)} collected ${coins(bounty.amount)} for "${bounty.task}"`, line(COPY.collected))
   if (pinned.length) {

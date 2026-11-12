@@ -61,6 +61,15 @@ export type Config = {
   taxes: Taxes
   /** The id of the channel the morning paper and the bank's other announcements go to. Empty until an admin picks one. */
   channel: string
+  begging: Begging
+}
+
+/** Who may beg and for how long. Only someone holding less than `below` may; `perDay` of zero stops begging. */
+export type Begging = {
+  below: number
+  /** How long a plea stays open, in minutes. */
+  minutes: number
+  perDay: number
 }
 
 export const defaultConfig: Config = {
@@ -79,6 +88,7 @@ export const defaultConfig: Config = {
   market: { enabled: false, fee: 1 },
   taxes: { transfer: 0, winnings: 0, wealth: 0, wealthAbove: 200, interest: 0 },
   channel: "",
+  begging: { below: 10, minutes: 60, perDay: 1 },
 }
 
 /**
@@ -92,7 +102,8 @@ export const defaultConfig: Config = {
  *
  * `bond` is coins going into a bond and coming back out, and `shop` is someone paying for something in a shop: the
  * bank's, paid to the central bank, or a colleague's, paid to them. `bounty` is coins put up for a job, or handed back when it is called off; paying one out is
- * a `give` from the bounty board, since that is what it is.
+ * a `give` from the bounty board, since that is what it is. `alms` is a coin spared for someone begging: a gift, but
+ * charity rather than thanks, so it doesn't count towards what colleagues have given them.
  */
 export type EntryKind =
   | "grant"
@@ -112,6 +123,7 @@ export type EntryKind =
   | "bond"
   | "shop"
   | "bounty"
+  | "alms"
 
 /**
  * The accounts that aren't people. They hold coins like anyone else, so games move coins around without creating or

@@ -6,6 +6,7 @@ import { setup } from "../src/server/casino"
 import type { Ledger } from "../src/server/ledger"
 import { setupMarket } from "../src/server/market"
 import { setupShop } from "../src/server/shop"
+import { setupBegging } from "../src/server/begging"
 import { inCents } from "../src/server/money"
 import { CENTS, defaultConfig, type Config } from "../src/shared/types"
 
@@ -84,6 +85,7 @@ export function world(games: Partial<Config["games"]> = {}, market: Partial<Conf
   setupMarket(sql as never)
   db.run("create table if not exists meta (key text primary key, value text not null)")
   setupShop(sql as never)
+  setupBegging(sql as never)
   /** Someone new, with the starting hundred. */
   const join = (id: string) => {
     db.query("insert into accounts (id, name, created_at) values (?, ?, ?)").run(id, id.toLowerCase(), clock.now)

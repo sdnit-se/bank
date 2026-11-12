@@ -32,6 +32,7 @@ import { casinoStats, sources } from "./stats"
 import { bounties, bountyClick, bountyHelp } from "./bounties"
 import { refreshFrontPage } from "./canvas"
 import { publishHome } from "./home"
+import { beg, begClick, begHelp, setupBegging } from "./begging"
 import { buy, setupShop, shop, shopClick, shopFor, shopHelp, stock, unstock } from "./shop"
 import { heistsDue, interact } from "./tables"
 import { titles, titlesOf } from "./titles"
@@ -205,6 +206,7 @@ export class Workspace extends DurableObject<Env> {
     setup(this.sql)
     setupMarket(this.sql)
     setupShop(this.sql)
+    setupBegging(this.sql)
     this.ctx.storage.transactionSync(() => convertToCents(this.sql))
   }
 
@@ -228,7 +230,7 @@ export class Workspace extends DurableObject<Env> {
   /** A click on a button under one of Bank's messages. */
   async interaction(input: { user: string; action: string; value: string }): Promise<SlackMessage> {
     const [ledger, before] = [this.ledger(), this.lastEntry()]
-    return this.changed((await shopClick(ledger, input)) ?? (await bountyClick(ledger, input)) ?? (await interact(ledger, input)), before)
+    return this.changed((await shopClick(ledger, input)) ?? (await bountyClick(ledger, input)) ?? (await begClick(ledger, input)) ?? (await interact(ledger, input)), before)
   }
 
   /** The daily round. */
@@ -315,6 +317,7 @@ export class Workspace extends DurableObject<Env> {
     config.games = { ...defaultConfig.games, ...config.games }
     config.market = { ...defaultConfig.market, ...config.market }
     config.taxes = { ...defaultConfig.taxes, ...config.taxes }
+    config.begging = { ...defaultConfig.begging, ...config.begging }
     return config
   }
 
@@ -873,6 +876,11 @@ export class Workspace extends DurableObject<Env> {
       market: { enabled: Boolean(market.enabled), fee: rate(market.fee, 25) },
       taxes: { transfer: rate(taxes.transfer, 50), winnings: rate(taxes.winnings, 90), wealth: rate(taxes.wealth, 50), wealthAbove: whole(taxes.wealthAbove, 0), interest: rate(taxes.interest, 50) },
       channel: /^C[A-Z0-9]+$/.test(input.channel ?? this.settings().channel) ? (input.channel ?? this.settings().channel) : "",
+      begging: {
+        below: whole((input.begging ?? this.settings().begging).below, 0),
+        minutes: Math.min(whole((input.begging ?? this.settings().begging).minutes, 1), 24 * 60),
+        perDay: Math.min(whole((input.begging ?? this.settings().begging).perDay, 0), 24),
+      },
     }
     // Bank can only post where it is a member.
     if (config.channel && config.channel !== this.settings().channel) {
@@ -1186,6 +1194,8 @@ export class Workspace extends DurableObject<Env> {
     if (posted) return this.changed(posted, before)
     const sold = await shop(this.ledger(), { sub, words: words.slice(1), user: params.user_id })
     if (sold) return this.changed(sold, before)
+    const begged = await beg(this.ledger(), { sub, words: words.slice(1), user: params.user_id, channel: params.channel ?? null })
+    if (begged) return this.changed(begged, before)
     const earned = titles(this.ledger(), { sub, user: params.user_id })
     if (earned) return earned
 
@@ -1228,6 +1238,7 @@ export class Workspace extends DurableObject<Env> {
       marketHelp(config),
       bondHelp(config),
       shopHelp(this.ledger()),
+      begHelp(this.ledger()),
       [`<${this.env.PUBLIC_URL}|open bank> · the leaderboard, the economy, and who the casino has ruined`],
     ]
       .map((lines) => lines.filter(Boolean).join("\n"))

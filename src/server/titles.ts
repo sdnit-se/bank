@@ -32,6 +32,8 @@ export const TITLES: { name: string; how: string; who: string }[] = [
   { name: "Day trader", how: "make 25 trades", who: "select actor as id from entries where kind in ('buy', 'sell') group by actor having count(*) >= 25" },
   { name: "Model taxpayer", how: "pay 100 in tax", who: `select from_id as id from entries where kind = 'tax' group by from_id having sum(amount) >= ${coins(100)}` },
   { name: "Bounty hunter", how: "collect 3 bounties", who: `select to_id as id from entries where kind = 'give' and from_id = '${BOUNTIES}' group by to_id having count(*) >= 3` },
+  { name: "Philanthropist", how: "spare coins for 5 people begging", who: "select user_id as id from plea_gifts group by user_id having count(*) >= 5" },
+  { name: "Professional beggar", how: "be spared 50 by begging", who: `select to_id as id from entries where kind = 'alms' group by to_id having sum(amount) >= ${coins(50)}` },
   { name: "Big spender", how: "spend 200 in the shop", who: `select from_id as id from entries where kind = 'shop' group by from_id having sum(amount) >= ${coins(200)}` },
 ]
 

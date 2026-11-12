@@ -98,6 +98,8 @@ export function historyLine(row: { kind: string; from_id: string | null; to_id: 
       return row.to_id === CENTRAL ? `-${amount} at the bank's shop for ${row.note}` : `-${amount} for ${row.note} from <@${row.to_id}>`
     case "bounty":
       return row.to_id === user ? `+${amount} back from a bounty that was called off` : `-${amount} on a bounty: ${row.note}`
+    case "alms":
+      return row.to_id === user ? `+${amount} spared by <@${row.from_id}> when you begged` : `-${amount} spared for <@${row.to_id}>, who begged`
     case "give":
       return row.from_id === BOUNTIES ? `+${amount} bounty for ${row.note}` : null
     default:

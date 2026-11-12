@@ -479,6 +479,8 @@ function describe(entry: Entry, history: History, viewer: string | null) {
       return entry.to === CENTRAL ? `${name(entry.from)} bought ${entry.note} in the bank's shop` : `${name(entry.from)} bought ${entry.note} from ${name(entry.to)}`
     case "bounty":
       return entry.from === BOUNTIES ? `${name(entry.to)} got a bounty stake back` : `${name(entry.from)} put coins on a bounty`
+    case "alms":
+      return `${name(entry.from)} spared ${name(entry.to)} some change`
     case "print":
       return `the market printed ${viewer === entry.actor ? "your" : `${name(entry.actor)}'s`} gain on ${entry.note ?? "a sale"}`
     default:
@@ -1265,6 +1267,12 @@ function SettingsPanel(props: { me: Me; changed: () => void }) {
             <NumberField label="Jail, minutes" value={draft.games.jail} set={(value) => setDraft("games", "jail", value)} />
           </Numbers>
         </Show>
+
+        <Numbers title="Begging" note="Anyone holding less than this can /bank beg, as many times a day as allowed, and each plea stays open this long. 0 pleas a day switches begging off.">
+          <NumberField label="Under, coins" value={draft.begging.below} set={(value) => setDraft("begging", "below", value)} />
+          <NumberField label="Open, minutes" value={draft.begging.minutes} set={(value) => setDraft("begging", "minutes", value)} />
+          <NumberField label="Pleas a day" value={draft.begging.perDay} set={(value) => setDraft("begging", "perDay", value)} />
+        </Numbers>
 
         <div class="setting">
           <div class="min-w-0">

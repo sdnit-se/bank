@@ -6,6 +6,7 @@ import type { Rand } from "../src/server/games"
 import type { Message } from "../src/server/ledger"
 import { bounties, bountyClick } from "../src/server/bounties"
 import { shop, shopClick, stock, unstock } from "../src/server/shop"
+import { beg, begClick } from "../src/server/begging"
 import { sources } from "../src/server/stats"
 import { heistsDue, interact } from "../src/server/tables"
 import { BOUNTIES, CENTRAL, CENTS, HOUSE, nextDraw, POOLS, POT } from "../src/shared/types"
@@ -312,6 +313,31 @@ test("a caught crew sits out heists until it pays bail, and a heist nobody start
   expect(w.posts.at(-1)).toMatchObject({ channel: "C42" })
   expect([w.balance(A), w.balance(B)]).toEqual([110, 110])
   expect(w.total()).toBe(800)
+})
+
+test("only the nearly broke can beg, and what is spared reaches them without counting as thanks", async () => {
+  const w = world()
+  w.join(C)
+  const ask = (user: string, text: string) => beg(w.ledger, { sub: "beg", words: text.split(" ").filter(Boolean), user, channel: "C1" })
+  const spare = (user: string, value: string) => begClick(w.ledger, { user, action: "beg_spare", value })
+  expect((await ask(A, "5 for coffee"))!.text).toContain("not poor enough")
+  w.ledger.move({ from: A, to: B, amount: 95 * CENTS, kind: "give" })
+  expect((await ask(A, "50"))!.text).toContain("10 coins at most")
+  const plea = await ask(A, "8 for coffee")
+  expect(plea!.response_type).toBe("in_channel")
+  const id = button(plea).split(":")[0]
+  expect((await spare(A, `${id}:5`))!.text).toContain("your own plea")
+  await spare(B, `${id}:5`)
+  // Only the 3 still missing are taken, and the plea closes.
+  const done = await spare(C, `${id}:5`)
+  expect(done!.text).toContain("8 coins")
+  expect([w.balance(A), w.balance(B), w.balance(C)]).toEqual([13, 190, 97])
+  expect((await spare(C, `${id}:1`))!.text).toContain("closed")
+  expect(w.ledger.row(A)!.received).toBe(0)
+  expect((await ask(A, "2"))!.text).toContain("not poor enough")
+  w.ledger.move({ from: A, to: B, amount: 10 * CENTS, kind: "give" })
+  expect((await ask(A, "2"))!.text).toContain("which is the limit")
+  expect(w.total()).toBe(300)
 })
 
 test("an office bet pays the whole pot to the side that was right, and gives stakes back when nobody was", async () => {
