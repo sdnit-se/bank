@@ -829,6 +829,7 @@ export class Workspace extends DurableObject<Env> {
     this.assertActive(viewer)
     const result = await this.transfer(viewer.id, to, amount, note?.slice(0, 280) ?? null, "give")
     if (!result.ok) throw new Error(result.message)
+    this.ctx.waitUntil(refreshFrontPage(this.ledger()))
     return { balance: result.balance / CENTS }
   }
 
@@ -901,6 +902,7 @@ export class Workspace extends DurableObject<Env> {
         ? this.move({ from: null, to: target, amount, kind: "adjust", note, actor: viewer.id })
         : this.move({ from: target, to: null, amount: -amount, kind: "adjust", note, actor: viewer.id })
     if (!result.ok) throw new Error(result.reason === "insufficient" ? `they only have ${result.balance / CENTS}` : "unknown person")
+    this.ctx.waitUntil(refreshFrontPage(this.ledger()))
     return { ok: true }
   }
 
@@ -909,6 +911,7 @@ export class Workspace extends DurableObject<Env> {
     this.assertAdmin(viewer)
     const result = this.ctx.storage.transactionSync(() => stimulus(this.ledger(), amount, viewer.id))
     console.log("stimulus", { by: viewer.id, ...result })
+    this.ctx.waitUntil(refreshFrontPage(this.ledger()))
     return { each: result.each / CENTS, people: result.people }
   }
 
@@ -980,7 +983,10 @@ export class Workspace extends DurableObject<Env> {
   /** Re-reads the member list from Slack now instead of waiting for the daily pass. */
   async resyncMembers(viewer: Viewer) {
     this.assertAdmin(viewer)
-    return { members: await this.syncMembers() }
+    const members = await this.syncMembers()
+    // Names and who has left show on the front page.
+    this.ctx.waitUntil(refreshFrontPage(this.ledger()))
+    return { members }
   }
 
   /** The public channels an admin can send the morning paper to. */
