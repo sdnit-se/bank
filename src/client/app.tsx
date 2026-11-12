@@ -453,6 +453,7 @@ function describe(entry: Entry, history: History, viewer: string | null) {
     case "refund":
       return `${name(entry.from)} got back a reaction from ${name(entry.to)}`.replace(/^you got back/, "you returned")
     case "bet":
+      if (entry.note === "blackjack double") return `${name(entry.from)} doubled down at blackjack`
       return `${name(entry.from)} staked on ${entry.note === "lottery" ? "lottery tickets" : (entry.note ?? "a bet")}`
     case "payout":
       if (entry.note === "pool refund") return `${name(entry.to)} got a stake back from an office bet`
@@ -470,6 +471,7 @@ function describe(entry: Entry, history: History, viewer: string | null) {
     case "sell":
       return `${name(entry.to)} sold ${entry.note ?? "shares"}`
     case "tax":
+      if (entry.note?.startsWith("bail")) return `${name(entry.actor ?? entry.from)} posted ${entry.note}`
       return `${name(entry.actor ?? entry.from)} paid a ${entry.note ?? "tax"}`
     case "bond":
       return entry.to === BONDS ? `${name(entry.from)} bought a bond at ${entry.note}` : `${possessive(entry.to)} bond matured`
@@ -1257,9 +1259,10 @@ function SettingsPanel(props: { me: Me; changed: () => void }) {
         </div>
 
         <Show when={draft.games.enabled}>
-          <Numbers note="Winnings above the reserve go to the central bank at the daily draw.">
+          <Numbers note="Winnings above the reserve go to the central bank at the daily draw. A caught heist crew sits out heists for the jail time, or pays its stake as bail; 0 lets them walk.">
             <NumberField label="Biggest bet" value={draft.games.maxBet} set={(value) => setDraft("games", "maxBet", value)} />
             <NumberField label="House reserve" value={draft.games.reserve} set={(value) => setDraft("games", "reserve", value)} />
+            <NumberField label="Jail, minutes" value={draft.games.jail} set={(value) => setDraft("games", "jail", value)} />
           </Numbers>
         </Show>
 

@@ -16,6 +16,7 @@ import {
   draw,
   drawLine,
   flip,
+  HEIST_CREW,
   HEIST_PAYS,
   FLIP_PAYS,
   flipLine,
@@ -35,7 +36,7 @@ import { held, loud, quiet, schedule, tooFast, type Ledger, type Message } from 
 import { money as currency } from "./money"
 import { publish } from "./paper"
 import { expirePools, pool } from "./pools"
-import { answerDuel, deal, hasHand, joinHeist, offerDuel, owed, planHeist, playHand, runHeist } from "./tables"
+import { answerDuel, deal, hasHand, joinHeist, offerDuel, owed, payBail, planHeist, playHand, runHeist } from "./tables"
 import { collectWealth, levy, taxed } from "./taxes"
 import { award } from "./titles"
 
@@ -58,12 +59,17 @@ export function setup(sql: SqlStorage) {
     create table if not exists hands (user_id text primary key, stake integer not null, player text not null, dealer text not null, at integer not null);
     create table if not exists bonds (id integer primary key autoincrement, user_id text not null, amount integer not null, rate real not null, matures integer not null);
     create table if not exists heists (id integer primary key autoincrement, by_id text not null, stake integer not null, crew text not null, at integer not null);
+    create table if not exists arrests (id integer primary key autoincrement, user_id text not null, stake integer not null, at integer not null, until integer not null);
     create table if not exists pools (id integer primary key autoincrement, by_id text not null, question text not null, stake integer not null, closed integer not null default 0, channel text, at integer not null);
     create table if not exists pool_bets (pool integer not null, user_id text not null, side text not null, amount integer not null, primary key (pool, user_id));
     create table if not exists bounties (id integer primary key autoincrement, by_id text not null, task text not null, claims text not null, channel text, at integer not null);
     create table if not exists bounty_funds (bounty integer not null, user_id text not null, amount integer not null, primary key (bounty, user_id));
     create table if not exists titles (user_id text not null, title text not null, at integer not null, primary key (user_id, title));
   `)
+  // Heists planned before they could go off by themselves didn't say where they were planned.
+  if (!sql.exec<{ name: string }>("pragma table_info(heists)").toArray().some((column) => column.name === "channel")) {
+    sql.exec("alter table heists add column channel text")
+  }
   // Marked as bots, which keeps them off the leaderboard and stops anyone giving them coins by hand.
   for (const [id, name] of Object.entries(INSTITUTIONS)) {
     sql.exec("insert or ignore into accounts (id, name, bot, created_at) values (?, ?, 1, ?)", id, name, Date.now())
@@ -84,9 +90,9 @@ export function casinoHelp(config: Config) {
     `\`/bank flip 10\` · double or nothing, heads unless you say tails`,
     `\`/bank slots 10\` · three reels, up to ${SLOT_TOP} times your stake`,
     `\`/bank roulette 10 red\` · red, black, odd or even doubles it. a number from 0 to 36 pays 36 times`,
-    `\`/bank blackjack 10\` · beat the dealer to 21, then \`/bank hit\` or \`/bank stand\`. walk away for ten minutes and the house keeps it`,
+    `\`/bank blackjack 10\` · beat the dealer to 21, then \`/bank hit\`, \`/bank stand\`, or \`/bank double\` on your first two cards. walk away for ten minutes and the house keeps it`,
     `\`/bank duel @someone 10\` · a coin flip between you. they \`/bank accept\` or \`/bank decline\`. leave the name out and anyone can take it`,
-    `\`/bank heist 10\` · get a crew together to rob the house. ${HEIST_PAYS} times your stake if it works, and a bigger crew has better odds`,
+    `\`/bank heist 10\` · get a crew of up to ${HEIST_CREW} together to rob the house. ${HEIST_PAYS} times your stake if it works, and a bigger crew has better odds${config.games.jail ? `. a caught crew does ${config.games.jail} minutes, or pays its stake in \`/bank bail\`` : ""}`,
     `\`/bank pool will the demo work?\` · an office bet. people pick yes or no, and whoever called it splits the pot. \`/bank pools\` lists them`,
     `\`/bank lottery 5\` · five tickets for the daily draw. the next one is ${drawTime()}`,
     `\`/bank titles\` · what you've earned, and what's left to earn`,
@@ -212,10 +218,18 @@ const duel: Game = async (bet) => {
 
 const heist: Game = async (bet) => {
   const word = bet.words[0]?.toLowerCase()
-  if (word === "join") return joinHeist(bet.ledger, bet.user)
-  if (word === "go") return runHeist(bet.ledger, bet.user)
-  const problem = (await refuse(bet, "say what each of the crew puts in: `/bank heist 10`")) ?? tooRich(bet, HEIST_PAYS)
-  return problem ? quiet(problem) : planHeist(bet.ledger, bet.user, bet.amount)
+  const problem = word === "join" || word === "go" ? null : ((await refuse(bet, "say what each of the crew puts in: `/bank heist 10`")) ?? tooRich(bet, HEIST_PAYS))
+  if (problem) return quiet(problem)
+  const answer = word === "join" ? await joinHeist(bet.ledger, bet.user) : word === "go" ? runHeist(bet.ledger, bet.user) : planHeist(bet.ledger, bet.user, bet.amount, bet.channel)
+  // A plan goes in by itself when its time is up, and a caught crew comes out of jail: the alarm has to know.
+  await schedule(bet.ledger)
+  return answer
+}
+
+/** `/bank bail` gets you out of jail, and `/bank bail @someone` gets them out. */
+const bail: Game = (bet) => {
+  const prisoner = bet.words.find((word) => MENTION.test(word))?.match(MENTION)![1] ?? bet.user
+  return payBail(bet.ledger, bet.user, prisoner)
 }
 
 const tickets = (ledger: Ledger) => ledger.sql.exec<{ n: number | null }>("select sum(count) as n from tickets").one().n ?? 0
@@ -270,10 +284,12 @@ const GAMES = new Map<string, Game>([
   ["bj", blackjack],
   ["hit", (bet) => playHand(bet.ledger, bet.user, "hit")],
   ["stand", (bet) => playHand(bet.ledger, bet.user, "stand")],
+  ["double", (bet) => playHand(bet.ledger, bet.user, "double")],
   ["duel", duel],
   ["accept", (bet) => answerDuel(bet.ledger, bet.user, true)],
   ["decline", (bet) => answerDuel(bet.ledger, bet.user, false)],
   ["heist", heist],
+  ["bail", bail],
   ["pool", (bet) => pool(bet.ledger, bet)],
   ["pools", (bet) => pool(bet.ledger, bet)],
   ["lottery", lottery],
@@ -351,7 +367,7 @@ export async function settle(ledger: Ledger) {
     await ledger.call("chat.postMessage", { channel: lottery.winner, text, unfurl_links: false }).catch((error: unknown) => console.error("announcement failed", error))
   }
 
-  if (config.games.enabled || config.taxes.wealth > 0 || held(ledger, BONDS) > 0) await ledger.storage.setAlarm(nextDraw(Date.now()))
+  await schedule(ledger)
 }
 
 // ---------- the economy

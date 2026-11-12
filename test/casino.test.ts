@@ -7,7 +7,7 @@ import type { Message } from "../src/server/ledger"
 import { bounties, bountyClick } from "../src/server/bounties"
 import { shop, shopClick, stock, unstock } from "../src/server/shop"
 import { sources } from "../src/server/stats"
-import { interact } from "../src/server/tables"
+import { heistsDue, interact } from "../src/server/tables"
 import { BOUNTIES, CENTRAL, CENTS, HOUSE, nextDraw, POOLS, POT } from "../src/shared/types"
 import { A, B, clock, frozen, world as bare } from "./world"
 
@@ -249,6 +249,69 @@ test("a heist costs nobody anything until the crew goes in, and then pays all of
   poor.print(HOUSE, 30)
   const small = button(await poor.say(A, "heist 10"))
   expect((await poor.click(B, "heist_join", small)).text).toContain("doesn't hold enough")
+})
+
+test("doubling down takes the stake again, deals one card, and pays on both stakes", async () => {
+  const w = world()
+  w.print(HOUSE, 500)
+  // 5 and 6 against the dealer's 10 and 7, then a 10: twenty-one on a doubled stake of 20.
+  w.deck(5, 6, 10, 7, 10)
+  const hand = await w.say(A, "blackjack 10")
+  const actions = hand!.blocks![1]!
+  expect(actions.type === "actions" && actions.elements.map((element) => element.action_id)).toEqual(["bj_hit", "bj_stand", "bj_double"])
+  const done = await w.click(A, "bj_double", button(hand))
+  expect(done.text).toContain("doubled")
+  expect([w.balance(A), w.balance(HOUSE)]).toEqual([120, 480])
+  // After a hit there is no doubling.
+  w.deck(2, 3, 10, 7, 2)
+  await w.say(A, "blackjack 10")
+  await w.say(A, "hit")
+  expect((await w.say(A, "double"))!.text).toContain("first two cards")
+  expect(w.total()).toBe(700)
+})
+
+test("either side of a duel can go again, for the same stake or double, and nobody else can", async () => {
+  const w = world()
+  w.join(C)
+  await w.say(A, "duel <@UBBB> 10")
+  const result = await w.say(B, "accept")
+  const pair = button(result)
+  expect((await w.click(C, "duel_rematch", pair)).text).toContain("that was their duel")
+  const again = await w.click(B, "duel_double", pair)
+  expect(again.response_type).toBe("in_channel")
+  expect(again.text).toContain("20 coins")
+  const before = w.balance(A)
+  await w.say(A, "accept")
+  expect(Math.abs(w.balance(A) - before)).toBe(20)
+  expect(w.balance(A) + w.balance(B)).toBe(200)
+})
+
+test("a caught crew sits out heists until it pays bail, and a heist nobody starts goes in by itself", async () => {
+  const w = world()
+  w.join(C)
+  w.print(HOUSE, 500)
+  w.ledger.rand = () => 99
+  await w.say(A, "heist 10")
+  await w.say(B, "heist join")
+  await w.say(A, "heist go")
+  expect((await w.say(A, "heist 10"))!.text).toContain("you're in jail for another 15 minutes")
+  expect((await w.say(C, "bail"))!.text).toContain("aren't in jail")
+  // C bails A out: the stake again, to the central bank. B serves the time.
+  expect((await w.say(C, "bail <@UAAA>"))!.response_type).toBe("in_channel")
+  expect([w.balance(A), w.balance(C), w.balance(CENTRAL)]).toEqual([90, 90, 10])
+  expect((await w.say(B, "heist join"))!.text).toContain("jail")
+  clock.now += 15 * 60_000
+
+  // Nobody says go: ten minutes later the alarm sends the crew in and says so where it was planned.
+  w.ledger.rand = () => 0
+  await w.say(A, "heist 10", "C42")
+  await w.say(B, "heist join")
+  expect(w.alarm()).toBe(clock.now + 10 * 60_000)
+  clock.now += 10 * 60_000
+  expect(await heistsDue(w.ledger)).toBe(1)
+  expect(w.posts.at(-1)).toMatchObject({ channel: "C42" })
+  expect([w.balance(A), w.balance(B)]).toEqual([110, 110])
+  expect(w.total()).toBe(800)
 })
 
 test("an office bet pays the whole pot to the side that was right, and gives stakes back when nobody was", async () => {

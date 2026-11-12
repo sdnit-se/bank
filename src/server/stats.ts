@@ -57,6 +57,12 @@ export function casinoStats(ledger: Ledger): CasinoStats {
     HOUSE,
   )
   for (const move of moves.toArray()) {
+    // Doubling down adds to the hand already on the table rather than being a play of its own.
+    if (move.kind === "bet" && move.game === "blackjack double") {
+      const hand = unpaid.get(`${move.actor} blackjack`)
+      if (hand) hand.stake += move.amount
+      continue
+    }
     const key = `${move.actor} ${move.game}`
     if (move.kind === "bet") {
       plays.push({ at: move.at, actor: move.actor, game: move.game, stake: move.amount, paid: 0 })

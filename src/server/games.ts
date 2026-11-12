@@ -140,7 +140,7 @@ export function settleHand(player: Card[], dealer: Card[]): Outcome {
 
 /** A crew that gets away is paid this many times what each of them put in. */
 export const HEIST_PAYS = 3
-export const HEIST_CREW = 8
+export const HEIST_CREW = 5
 
 /** The chance of getting away, out of 100. Every pair of hands up to five helps, and even five lose a little on average. */
 export const heistChance = (crew: number) => 22 + 2 * Math.min(crew, 5)

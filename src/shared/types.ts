@@ -6,6 +6,8 @@ export type Games = {
   maxBet: number
   /** What the house keeps. Whatever it wins beyond this goes to the central bank at the next draw. */
   reserve: number
+  /** Minutes a caught heist crew sits out heists, unless they pay bail. Zero lets them walk. */
+  jail: number
 }
 
 export type Market = {
@@ -73,7 +75,7 @@ export const defaultConfig: Config = {
     { name: "coin-20", amount: 20 },
   ],
   notify: true,
-  games: { enabled: false, maxBet: 25, reserve: 500 },
+  games: { enabled: false, maxBet: 25, reserve: 500, jail: 15 },
   market: { enabled: false, fee: 1 },
   taxes: { transfer: 0, winnings: 0, wealth: 0, wealthAbove: 200, interest: 0 },
   channel: "",

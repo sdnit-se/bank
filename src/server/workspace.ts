@@ -4,6 +4,7 @@ import {
   defaultConfig,
   EMOJI_NAME,
   HOUSE,
+  nextDraw,
   type Account,
   type Admin,
   type CasinoStats,
@@ -32,7 +33,7 @@ import { bounties, bountyClick, bountyHelp } from "./bounties"
 import { refreshFrontPage } from "./canvas"
 import { publishHome } from "./home"
 import { buy, setupShop, shop, shopClick, shopFor, shopHelp, stock, unstock } from "./shop"
-import { interact } from "./tables"
+import { heistsDue, interact } from "./tables"
 import { titles, titlesOf } from "./titles"
 import { levy, stimulus } from "./taxes"
 
@@ -231,9 +232,23 @@ export class Workspace extends DurableObject<Env> {
   }
 
   /** The daily round. */
+  /**
+   * The one alarm wakes for whatever is due (see `schedule`): crews whose ten minutes are up go in, the daily round runs
+   * once a draw has passed since the last one, and the front page catches up, which is also how it notices someone
+   * coming out of jail.
+   */
   async alarm() {
-    await settle(this.ledger())
-    await refreshFrontPage(this.ledger())
+    const ledger = this.ledger()
+    await heistsDue(ledger)
+    const now = Date.now()
+    const last = this.meta<number>("settled_at")
+    // Before the first round is on record, a draw is due if one passed in the last hour.
+    if (nextDraw(last ?? now - 60 * 60_000) <= now) {
+      await settle(ledger)
+      this.setMeta("settled_at", now)
+    }
+    await schedule(ledger)
+    await refreshFrontPage(ledger)
   }
 
   /** The newest entry in the ledger, to tell whether an answer moved any coins. */
@@ -853,7 +868,7 @@ export class Workspace extends DurableObject<Env> {
       starting: Math.max(0, Math.min(1_000_000, Math.floor(Number(input.starting) || 0))),
       emoji,
       notify: Boolean(input.notify),
-      games: { enabled: Boolean(games.enabled), maxBet: whole(games.maxBet, 1), reserve: whole(games.reserve, 0) },
+      games: { enabled: Boolean(games.enabled), maxBet: whole(games.maxBet, 1), reserve: whole(games.reserve, 0), jail: Math.min(whole(games.jail, 0), 24 * 60) },
       market: { enabled: Boolean(market.enabled), fee: rate(market.fee, 25) },
       taxes: { transfer: rate(taxes.transfer, 50), winnings: rate(taxes.winnings, 90), wealth: rate(taxes.wealth, 50), wealthAbove: whole(taxes.wealthAbove, 0), interest: rate(taxes.interest, 50) },
       channel: /^C[A-Z0-9]+$/.test(input.channel ?? this.settings().channel) ? (input.channel ?? this.settings().channel) : "",
@@ -1136,19 +1151,17 @@ export class Workspace extends DurableObject<Env> {
       const lines: string[] = []
       for (let i = 0; i < rows.length && lines.length < 10; i++) {
         const row = rows[i]!
-        // A win against the house is the stake going in and a payout right after it, and reads as one line.
-        const stake = rows[i + 1]
-        if (
-          row.kind === "payout" &&
-          row.from_id === HOUSE &&
-          stake?.kind === "bet" &&
-          stake.to_id === HOUSE &&
-          stake.from_id === params.user_id &&
-          stake.note === row.note
-        ) {
-          const ahead = row.amount - stake.amount
-          lines.push(playedLine(row.note ?? "the casino", bare(stake.amount), bare(row.amount), currency(config, Math.abs(ahead)), ahead))
-          i++
+        // A win against the house is the stake going in and a payout right after it, and reads as one line. A doubled
+        // blackjack hand has two stakes before its payout.
+        const stakeOf = (entry: EntryRow | undefined, note: string) =>
+          entry?.kind === "bet" && entry.to_id === HOUSE && entry.from_id === params.user_id && entry.note === note ? entry.amount : 0
+        const doubled = row.note === "blackjack" ? stakeOf(rows[i + 1], "blackjack double") : 0
+        const stake = stakeOf(rows[i + (doubled ? 2 : 1)], row.note ?? "")
+        if (row.kind === "payout" && row.from_id === HOUSE && stake) {
+          const ahead = row.amount - stake - doubled
+          const game = doubled ? "blackjack, doubled" : (row.note ?? "the casino")
+          lines.push(playedLine(game, bare(stake + doubled), bare(row.amount), currency(config, Math.abs(ahead)), ahead))
+          i += doubled ? 2 : 1
         } else lines.push(line(row))
       }
       return reply(`*your recent activity*\n${lines.join("\n")}`)

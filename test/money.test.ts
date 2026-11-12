@@ -18,7 +18,7 @@ test("the settings are used in cents and left alone in coins", () => {
   const inside = inCents(defaultConfig)
   expect(inside.starting).toBe(10_000)
   expect(inside.emoji.map((item) => item.amount)).toEqual([100, 500, 1000, 2000])
-  expect(inside.games).toEqual({ enabled: false, maxBet: 2500, reserve: 50_000 })
+  expect(inside.games).toEqual({ enabled: false, maxBet: 2500, reserve: 50_000, jail: 15 })
   expect(defaultConfig.starting).toBe(100)
 })
 

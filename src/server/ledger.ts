@@ -43,9 +43,22 @@ export function tooFast(ledger: Ledger, user: string, kinds: EntryKind[], most =
 /** Where the bank announces things: the channel an admin picked, or until they have, wherever a lottery ticket was last bought. */
 export const newsroom = (ledger: Ledger) => ledger.config().channel || ledger.meta<string>("lottery_channel")
 
-/** The daily round draws the lottery, settles the house, taxes wealth and pays back bonds. This makes sure one is coming. */
+/** How long a challenge, a hand or a heist waits for its next move. */
+export const WAITS = 10 * 60_000
+
+/**
+ * The Workspace has one alarm, and this aims it at whatever is due first: the daily round (the lottery, the house,
+ * taxes, bonds) at the next draw, a heist whose crew has waited long enough, or someone coming out of jail.
+ */
 export async function schedule(ledger: Ledger) {
-  const next = nextDraw(Date.now())
+  const now = Date.now()
+  const config = ledger.config()
+  const daily = config.games.enabled || config.taxes.wealth > 0 || held(ledger, BONDS) > 0 ? nextDraw(now) : null
+  const heist = ledger.sql.exec<{ at: number | null }>("select min(at) as at from heists").one().at
+  const release = ledger.sql.exec<{ at: number | null }>("select min(until) as at from arrests where until > ?", now).one().at
+  const due = [daily, heist === null ? null : heist + WAITS, release].filter((at): at is number => at !== null)
+  if (!due.length) return
+  const next = Math.max(Math.min(...due), now)
   if ((await ledger.storage.getAlarm()) !== next) await ledger.storage.setAlarm(next)
 }
 
@@ -61,6 +74,7 @@ export function playedLine(game: string, stake: string, paid: string, net: strin
 export function historyLine(row: { kind: string; from_id: string | null; to_id: string | null; note: string | null }, user: string, amount: string) {
   switch (row.kind) {
     case "bet":
+      if (row.note === "blackjack double") return `-${amount} doubling down at blackjack`
       return `-${amount} on ${row.note === "lottery" ? "lottery tickets" : (row.note ?? "a bet")}`
     case "payout":
       if (row.note === "pool refund") return `+${amount} back from an office bet that was called off`

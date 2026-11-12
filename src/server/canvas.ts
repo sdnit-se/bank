@@ -74,6 +74,17 @@ function page(ledger: Ledger) {
     const sold = ledger.sql.exec<{ n: number | null }>("select sum(count) as n from tickets").one().n ?? 0
     out.push("## :tickets: Lottery")
     out.push(`The pot is **${coins(held(ledger, POT))}** across ${sold} ${sold === 1 ? "ticket" : "tickets"}, drawn at 09:00. \`/bank lottery 5\` buys five.`)
+
+    // The alarm wakes when each of them is due out, and rewrites this, so nobody stays on the list after their time.
+    const inside = ledger.sql
+      .exec<{ user_id: string; until: number; stake: number }>("select user_id, max(until) as until, stake from arrests where until > ? group by user_id order by until", Date.now())
+      .toArray()
+    if (inside.length) {
+      const out_at = (at: number) => new Date(at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Stockholm" })
+      out.push("## :oncoming_police_car: In jail")
+      out.push(table(["Who", "Out at", "Bail"], inside.map((row) => [who(row.user_id), out_at(row.until), coins(row.stake)])))
+      out.push("`/bank bail` gets you out, and `/bank bail @someone` gets them out.")
+    }
   }
 
   out.push("## :classical_building: Central bank")

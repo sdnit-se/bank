@@ -18,8 +18,8 @@ Slack doesn't let apps upload custom emoji, so workspaces add the coin images th
   `/bank casino`. Games move coins and never create or destroy them. Stakes go to the house or the lottery pot; what
   the house wins beyond its reserve goes to a central bank at the daily draw, which puts a tenth of what it holds
   back into the pot.
-- **Games between people**: a duel with anyone who takes it (`/bank duel 10`), a heist where a crew robs the house
-  together (`/bank heist 10`, `src/server/tables.ts`), and office bets on a yes-or-no question, where whoever called
+- **Games between people**: a duel with anyone who takes it (`/bank duel 10`), a heist where a crew of up to five robs the house
+  together and a caught crew goes to jail unless someone pays bail (`/bank heist 10`, `/bank bail`, `src/server/tables.ts`), and office bets on a yes-or-no question, where whoever called
   it splits the pot (`/bank pool will the demo work?`, `src/server/pools.ts`).
 - **A morning paper.** One post after the 09:00 round reports the last day off the ledger, in place of an
   announcement for every little thing (`src/server/paper.ts`).

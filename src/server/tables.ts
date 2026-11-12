@@ -6,7 +6,7 @@
 // planned in `heists`. A row older than ten minutes counts as not there, and whoever removes a row is the one who
 // settles it.
 
-import { HOUSE } from "../shared/types"
+import { CENTRAL, HOUSE } from "../shared/types"
 import {
   BLACKJACK_PAYS,
   brokeLine,
@@ -27,13 +27,12 @@ import {
   showCards,
   type Card,
 } from "./games"
-import { button, held, inPlace, loud, quiet, withButtons, type Ledger, type Message } from "./ledger"
+import { button, held, inPlace, loud, newsroom, quiet, tooFast, WAITS, withButtons, type Ledger, type Message } from "./ledger"
 import { money } from "./money"
 import { poolClick } from "./pools"
 import { levy, taxed } from "./taxes"
 
-const LASTS = 10 * 60_000
-const waitingSince = () => Date.now() - LASTS
+const waitingSince = () => Date.now() - WAITS
 
 // ---------- duels
 
@@ -83,13 +82,33 @@ export async function answerDuel(ledger: Ledger, user: string, accept: boolean, 
   const [winner, loser] = (ledger.rand ?? secureRand)(2) ? [duel.from_id, user] : [user, duel.from_id]
   if (!ledger.move({ from: loser, to: winner, amount: duel.amount, kind: "duel", note: "duel", actor: user }).ok) return quiet("something went wrong, try again")
   const tax = levy(ledger, { from: winner, amount: duel.amount, rate: config.taxes.winnings, note: "winnings tax" })
-  return loud(duelDoneLine(secureRand, { winner: `<@${winner}>`, loser: `<@${loser}>`, amount: coins(duel.amount) }) + taxed(config, tax))
+  // Either of them can go again straight away, which is how a rivalry starts.
+  const pair = `${duel.from_id}:${user}:${duel.amount}`
+  return withButtons(loud(duelDoneLine(secureRand, { winner: `<@${winner}>`, loser: `<@${loser}>`, amount: coins(duel.amount) }) + taxed(config, tax)), [
+    button("Rematch", "duel_rematch", pair),
+    button("Double or nothing", "duel_double", pair, "danger"),
+  ])
+}
+
+/** A click on Rematch or Double or nothing under a result: a fresh challenge to the other one, for the same or twice the stake. */
+async function goAgain(ledger: Ledger, user: string, value: string, double: boolean): Promise<Message> {
+  const [first, second, amount] = value.split(":")
+  if (user !== first && user !== second) return quiet("that was their duel. start your own: `/bank duel @someone 10`")
+  const other = user === first ? second! : first!
+  const config = ledger.config()
+  // Twice the stake, unless that is over the limit, in which case as much as the limit allows.
+  const stake = double ? Math.min(Number(amount) * 2, config.games.maxBet) : Number(amount)
+  const rows = await ledger.ensure([user, other])
+  if ((rows.get(user)?.balance ?? 0) < stake) return quiet(brokeLine(secureRand, { balance: money(config, rows.get(user)?.balance ?? 0) }))
+  if (!rows.get(other) || rows.get(other)!.gone) return quiet("they've left. you win by default, which pays nothing.")
+  if (tooFast(ledger, user, ["bet", "duel"])) return quiet("slow down. they'll still be there in a minute.")
+  return offerDuel(ledger, { from: user, to: other, amount: stake })
 }
 
 // ---------- blackjack
 
 /** A hand being played. Its stake is already with the house, and `at` is when it was dealt. */
-type Hand = { stake: number; player: Card[]; dealer: Card[]; at: number }
+type Hand = { stake: number; player: Card[]; dealer: Card[]; at: number; doubled?: boolean }
 
 function openHand(ledger: Ledger, user: string): Hand | null {
   const row = ledger.sql
@@ -115,9 +134,20 @@ function keep(ledger: Ledger, user: string, hand: Hand): Message {
     JSON.stringify(hand.dealer),
     hand.at,
   )
-  const text = `:black_joker: <@${user}> has *${money(ledger.config(), hand.stake)}* on the table\ndealer: ${showCards(hand.dealer.slice(0, 1))} ??\n<@${user}>: ${showCards(hand.player)} (${handTotal(hand.player)})\n\`/bank hit\` or \`/bank stand\``
+  const double = hand.player.length === 2 && !cantDouble(ledger, user, hand)
+  const moves = double ? "`/bank hit`, `/bank stand` or `/bank double`" : "`/bank hit` or `/bank stand`"
+  const text = `:black_joker: <@${user}> has *${money(ledger.config(), hand.stake)}* on the table\ndealer: ${showCards(hand.dealer.slice(0, 1))} ??\n<@${user}>: ${showCards(hand.player)} (${handTotal(hand.player)})\n${moves}`
   const mine = `${user}:${hand.at}`
-  return withButtons(loud(text), [button("Hit", "bj_hit", mine, "primary"), button("Stand", "bj_stand", mine)])
+  const buttons = [button("Hit", "bj_hit", mine, "primary"), button("Stand", "bj_stand", mine)]
+  return withButtons(loud(text), double ? [...buttons, button("Double", "bj_double", mine)] : buttons)
+}
+
+/** Why this hand can't be doubled, if it can't: the second stake has to be there, and the house has to cover twice as much. */
+function cantDouble(ledger: Ledger, user: string, hand: Hand) {
+  if (hand.player.length !== 2) return "you can only double down on your first two cards."
+  if ((ledger.row(user)?.balance ?? 0) < hand.stake) return `doubling takes another ${money(ledger.config(), hand.stake)}, and you don't have it.`
+  if (held(ledger, HOUSE) - owed(ledger) < 2 * hand.stake) return "the house can't cover that hand doubled. play it as it is."
+  return null
 }
 
 /** Ends the hand: the dealer plays if there is anything left to beat, and the house pays what the hand is owed. */
@@ -132,7 +162,7 @@ function finish(ledger: Ledger, user: string, hand: Hand): Message {
   const tax = levy(ledger, { from: user, amount: paid - hand.stake, rate: config.taxes.winnings, note: "winnings tax" })
   const line = handLine(secureRand, outcome, { user: `<@${user}>`, amount: money(config, hand.stake), win: money(config, paid), up: money(config, paid - hand.stake) })
   return loud(
-    `:black_joker: dealer: ${showCards(dealer)} (${handTotal(dealer)}) · <@${user}>: ${showCards(hand.player)} (${handTotal(hand.player)})\n${line}${taxed(config, tax)}`,
+    `:black_joker: dealer: ${showCards(dealer)} (${handTotal(dealer)}) · <@${user}>: ${showCards(hand.player)} (${handTotal(hand.player)})${hand.doubled ? " · doubled" : ""}\n${line}${taxed(config, tax)}`,
   )
 }
 
@@ -144,9 +174,17 @@ export function deal(ledger: Ledger, user: string, stake: number): Message {
   return isBlackjack(hand.player) ? finish(ledger, user, hand) : keep(ledger, user, hand)
 }
 
-export function playHand(ledger: Ledger, user: string, move: "hit" | "stand"): Message {
+export function playHand(ledger: Ledger, user: string, move: "hit" | "stand" | "double"): Message {
   const hand = openHand(ledger, user)
   if (!hand) return quiet("you have no hand on the table. `/bank blackjack 10` deals one.")
+  // Doubling down: the same stake again, exactly one more card, and the hand is over.
+  if (move === "double") {
+    const problem = cantDouble(ledger, user, hand)
+    if (problem) return quiet(problem)
+    if (!ledger.move({ from: user, to: HOUSE, amount: hand.stake, kind: "bet", note: "blackjack double", actor: user }).ok) return quiet("something went wrong, try again")
+    hand.player.push(dealCard(ledger.rand ?? secureRand))
+    return finish(ledger, user, { ...hand, stake: hand.stake * 2, doubled: true })
+  }
   if (move === "hit") hand.player.push(dealCard(ledger.rand ?? secureRand))
   // Standing ends it, and so does reaching twenty-one or going over.
   return move === "stand" || handTotal(hand.player) >= 21 ? finish(ledger, user, hand) : keep(ledger, user, hand)
@@ -154,12 +192,15 @@ export function playHand(ledger: Ledger, user: string, move: "hit" | "stand"): M
 
 // ---------- heists
 
-type Heist = { id: number; by_id: string; stake: number; crew: string[]; at: number }
+type Heist = { id: number; by_id: string; stake: number; crew: string[]; channel: string | null; at: number }
+type HeistRow = Omit<Heist, "crew"> & { crew: string }
+
+const parsed = (row: HeistRow): Heist => ({ ...row, crew: JSON.parse(row.crew) as string[] })
 
 /** The heist someone is planning or could join: the one named by `id`, or the latest. */
 function plannedHeist(ledger: Ledger, where: "id = ?" | "by_id = ?" | "by_id != ?", value: string | number): Heist | null {
-  const row = ledger.sql.exec<Omit<Heist, "crew"> & { crew: string }>(`select * from heists where ${where} and at > ? order by id desc limit 1`, value, waitingSince()).toArray()[0]
-  return row ? { ...row, crew: JSON.parse(row.crew) as string[] } : null
+  const row = ledger.sql.exec<HeistRow>(`select * from heists where ${where} and at > ? order by id desc limit 1`, value, waitingSince()).toArray()[0]
+  return row ? parsed(row) : null
 }
 
 const crewOf = (heist: Heist) => heist.crew.map((id) => `<@${id}>`).join(", ")
@@ -168,8 +209,8 @@ function heistCard(ledger: Ledger, heist: Heist): Message {
   const coins = (cents: number) => money(ledger.config(), cents)
   const text = [
     `:moneybag: <@${heist.by_id}> is putting a crew together to rob the house. *${coins(heist.stake)}* each to get in, *${coins(heist.stake * (HEIST_PAYS - 1))}* each on top if it works.`,
-    `crew: ${crewOf(heist)} · ${heistChance(heist.crew.length)}% chance, and every pair of hands up to five helps`,
-    `\`/bank heist join\` to get in, and <@${heist.by_id}> says \`/bank heist go\`. ten minutes.`,
+    `crew: ${crewOf(heist)} (${heist.crew.length} of ${HEIST_CREW}) · ${heistChance(heist.crew.length)}% chance, and every pair of hands helps`,
+    `\`/bank heist join\` to get in. it goes in by itself in ten minutes, or when <@${heist.by_id}> says \`/bank heist go\`.`,
   ].join("\n")
   return withButtons(loud(text), [button("Join the crew", "heist_join", String(heist.id), "primary"), button("Go", "heist_go", String(heist.id), "danger")])
 }
@@ -177,16 +218,33 @@ function heistCard(ledger: Ledger, heist: Heist): Message {
 /** What the house can lose, beyond what it already owes on hands being played. A heist is only on while it could pay the whole crew. */
 const worthRobbing = (ledger: Ledger, heist: Heist, crew: number) => held(ledger, HOUSE) - owed(ledger) >= (HEIST_PAYS - 1) * heist.stake * crew
 
+/** Someone's current stretch in jail, if they are serving one: until when, and what bail costs (the heist's stake). */
+function arrest(ledger: Ledger, user: string) {
+  return ledger.sql.exec<{ until: number; stake: number }>("select until, stake from arrests where user_id = ? and until > ? order by until desc limit 1", user, Date.now()).toArray()[0] ?? null
+}
+
+/** Why someone can't take part in a heist right now, if they can't: they're in jail. */
+function jailed(ledger: Ledger, user: string) {
+  const time = arrest(ledger, user)
+  if (!time) return null
+  const minutes = Math.max(1, Math.ceil((time.until - Date.now()) / 60_000))
+  return `you're in jail for another ${minutes} ${minutes === 1 ? "minute" : "minutes"}. \`/bank bail\` gets you out for ${money(ledger.config(), time.stake)}.`
+}
+
 /** Starts planning one. The stake has been checked, and nobody pays until the crew goes in. */
-export function planHeist(ledger: Ledger, user: string, stake: number): Message {
+export function planHeist(ledger: Ledger, user: string, stake: number, channel: string | null): Message {
+  const inside = jailed(ledger, user)
+  if (inside) return quiet(inside)
   ledger.sql.exec("delete from heists where by_id = ? or at < ?", user, waitingSince())
-  ledger.sql.exec("insert into heists (by_id, stake, crew, at) values (?, ?, ?, ?)", user, stake, JSON.stringify([user]), Date.now())
+  ledger.sql.exec("insert into heists (by_id, stake, crew, channel, at) values (?, ?, ?, ?, ?)", user, stake, JSON.stringify([user]), channel, Date.now())
   return heistCard(ledger, plannedHeist(ledger, "by_id = ?", user)!)
 }
 
 export async function joinHeist(ledger: Ledger, user: string, id: number | null = null): Promise<Message> {
   const row = (await ledger.ensure([user])).get(user)
   if (!row || row.gone || row.bot) return quiet("only members of this workspace get to rob it.")
+  const inside = jailed(ledger, user)
+  if (inside) return quiet(inside)
   const heist = id === null ? plannedHeist(ledger, "by_id != ?", user) : plannedHeist(ledger, "id = ?", id)
   if (!heist) return quiet("nobody is planning a heist. start one: `/bank heist 10`")
   if (heist.crew.includes(user)) return quiet("you're already in the van.")
@@ -198,17 +256,25 @@ export async function joinHeist(ledger: Ledger, user: string, id: number | null 
   return heistCard(ledger, heist)
 }
 
-/** The crew goes in: everyone who can still pay puts their stake up, and one roll decides it for all of them. */
+/** The word from whoever planned it. */
 export function runHeist(ledger: Ledger, user: string, id: number | null = null): Message {
-  const config = ledger.config()
   const heist = id === null ? plannedHeist(ledger, "by_id = ?", user) : plannedHeist(ledger, "id = ?", id)
   if (!heist) return quiet("you aren't planning a heist. start one: `/bank heist 10`")
   if (heist.by_id !== user) return quiet(`only <@${heist.by_id}> gives the word.`)
+  return goIn(ledger, heist) ?? quiet("that heist is over.")
+}
+
+/**
+ * The crew goes in: everyone who can still pay puts their stake up, and one roll decides it for all of them. A
+ * caught crew goes to jail. Null when someone else got there first.
+ */
+function goIn(ledger: Ledger, heist: Heist): Message | null {
+  const config = ledger.config()
   // Whoever removes the plan runs it, and from here on nothing waits, so nobody joins or pays twice.
-  if (ledger.sql.exec("delete from heists where id = ?", heist.id).rowsWritten !== 1) return quiet("that heist is over.")
-  const crew = heist.crew.filter((member) => (ledger.row(member)?.balance ?? 0) >= heist.stake)
+  if (ledger.sql.exec("delete from heists where id = ?", heist.id).rowsWritten !== 1) return null
+  const crew = heist.crew.filter((member) => (ledger.row(member)?.balance ?? 0) >= heist.stake && !arrest(ledger, member))
   if (!crew.length || !worthRobbing(ledger, heist, crew.length)) {
-    return loud(`:moneybag: <@${user}>'s heist is off: ${crew.length ? "the house no longer holds enough to be worth it" : "nobody in the crew could pay their way in"}.`)
+    return loud(`:moneybag: <@${heist.by_id}>'s heist is off: ${crew.length ? "the house no longer holds enough to be worth it" : "nobody in the crew could pay their way in"}.`)
   }
   for (const member of crew) ledger.move({ from: member, to: HOUSE, amount: heist.stake, kind: "bet", note: "heist", actor: member })
   const won = (ledger.rand ?? secureRand)(100) < heistChance(crew.length)
@@ -219,6 +285,13 @@ export function runHeist(ledger: Ledger, user: string, id: number | null = null)
       tax += levy(ledger, { from: member, amount: heist.stake * (HEIST_PAYS - 1), rate: config.taxes.winnings, note: "winnings tax" })
     }
   }
+  let booked = ""
+  if (!won && config.games.jail > 0) {
+    const until = Date.now() + config.games.jail * 60_000
+    for (const member of crew) ledger.sql.exec("insert into arrests (user_id, stake, at, until) values (?, ?, ?, ?)", member, heist.stake, Date.now(), until)
+    const minutes = `${config.games.jail} ${config.games.jail === 1 ? "minute" : "minutes"}`
+    booked = ` ${crew.length === 1 ? "that's" : "they're each"} ${minutes} in jail, or ${money(config, heist.stake)} bail: \`/bank bail\`.`
+  }
   const left = heist.crew.filter((member) => !crew.includes(member)).map((id) => `<@${id}>`)
   const words = {
     crew: crewOf({ ...heist, crew }),
@@ -228,7 +301,43 @@ export function runHeist(ledger: Ledger, user: string, id: number | null = null)
     win: money(config, heist.stake * HEIST_PAYS),
     up: money(config, heist.stake * (HEIST_PAYS - 1)),
   }
-  return loud(`${heistLine(secureRand, won, words)}${left.length ? ` ${left.join(", ")} couldn't pay and stayed in the van.` : ""}${taxed(config, tax)}`)
+  return loud(`${heistLine(secureRand, won, words)}${booked}${left.length ? ` ${left.join(", ")} couldn't come and stayed in the van.` : ""}${taxed(config, tax)}`)
+}
+
+/**
+ * Sends in every crew whose ten minutes are up, from the alarm, and says how it went where the heist was planned.
+ * Plans from before heists went in by themselves, long forgotten, are dropped instead of springing on anyone.
+ */
+export async function heistsDue(ledger: Ledger) {
+  ledger.sql.exec("delete from heists where at < ?", Date.now() - WAITS - 60 * 60_000)
+  const due = ledger.sql.exec<HeistRow>("select * from heists where at <= ?", waitingSince()).toArray()
+  for (const row of due) {
+    const answer = goIn(ledger, parsed(row))
+    const channel = row.channel ?? newsroom(ledger)
+    if (!answer || !channel) continue
+    await ledger
+      .call("chat.postMessage", { channel, text: `:alarm_clock: time's up, so the crew went in without waiting for the word.\n${answer.text}`, unfurl_links: false })
+      .catch((error: unknown) => console.error("heist result failed", error))
+  }
+  return due.length
+}
+
+/** Pays someone's bail, theirs or a colleague's, to the central bank. They can plan and join heists again at once. */
+export async function payBail(ledger: Ledger, payer: string, prisoner: string): Promise<Message> {
+  const config = ledger.config()
+  const time = arrest(ledger, prisoner)
+  if (!time) return quiet(prisoner === payer ? "you aren't in jail. keep it that way." : "they aren't in jail.")
+  const row = (await ledger.ensure([payer])).get(payer)
+  if ((row?.balance ?? 0) < time.stake) return quiet(brokeLine(secureRand, { balance: money(config, row?.balance ?? 0) }))
+  const note = payer === prisoner ? "bail" : `bail for ${ledger.row(prisoner)?.name ?? "someone"}`
+  if (!ledger.move({ from: payer, to: CENTRAL, amount: time.stake, kind: "tax", note, actor: payer }).ok) return quiet("something went wrong, try again")
+  ledger.sql.exec("update arrests set until = ? where user_id = ? and until > ?", Date.now(), prisoner, Date.now())
+  const bail = money(config, time.stake)
+  return loud(
+    payer === prisoner
+      ? `:unlock: <@${payer}> paid *${bail}* in bail and is back on the street. the house has been warned.`
+      : `:unlock: <@${payer}> posted *${bail}* bail for <@${prisoner}>. true friendship, or an accessory after the fact.`,
+  )
 }
 
 // ---------- buttons
@@ -237,12 +346,13 @@ export function runHeist(ledger: Ledger, user: string, id: number | null = null)
 export async function interact(ledger: Ledger, input: { user: string; action: string; value: string }): Promise<Message> {
   if (!ledger.config().games.enabled) return quiet("the casino is closed.")
   const [game, move] = input.action.split("_")
-  if (game === "bj" && (move === "hit" || move === "stand")) {
+  if (game === "bj" && (move === "hit" || move === "stand" || move === "double")) {
     const [owner, at] = input.value.split(":")
     if (owner !== input.user) return quiet("that isn't your hand. deal your own: `/bank blackjack 10`")
     if (openHand(ledger, input.user)?.at !== Number(at)) return quiet("that hand is over.")
     return inPlace(playHand(ledger, input.user, move))
   }
+  if (game === "duel" && (move === "rematch" || move === "double")) return goAgain(ledger, input.user, input.value, move === "double")
   if (game === "duel" && (move === "accept" || move === "decline")) {
     const id = Number(input.value) || 0
     const duel = ledger.sql.exec<Duel>("select * from duels where id = ?", id).toArray()[0]

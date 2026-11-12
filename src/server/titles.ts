@@ -26,6 +26,7 @@ export const TITLES: { name: string; how: string; who: string }[] = [
   { name: "Duellist", how: "win 10 duels", who: "select to_id as id from entries where kind = 'duel' group by to_id having count(*) >= 10" },
   { name: "Punching bag", how: "lose 10 duels", who: "select from_id as id from entries where kind = 'duel' group by from_id having count(*) >= 10" },
   { name: "Master criminal", how: "rob the house 3 times", who: "select to_id as id from entries where kind = 'payout' and note = 'heist' group by to_id having count(*) >= 3" },
+  { name: "Repeat offender", how: "get caught on 3 heists", who: "select user_id as id from arrests group by user_id having count(*) >= 3" },
   { name: "Oracle", how: "win 5 office bets", who: `select to_id as id from entries where kind = 'payout' and from_id = '${POOLS}' and note = 'the office pool' group by to_id having count(*) >= 5` },
   { name: "Bond villain", how: "lend the central bank 500 in all", who: `select from_id as id from entries where kind = 'bond' and to_id = '${BONDS}' group by from_id having sum(amount) >= ${coins(500)}` },
   { name: "Day trader", how: "make 25 trades", who: "select actor as id from entries where kind in ('buy', 'sell') group by actor having count(*) >= 25" },

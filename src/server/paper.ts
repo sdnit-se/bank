@@ -169,7 +169,10 @@ export async function publish(ledger: Ledger, round: Round, now = Date.now()) {
   }
   if (day.crew) {
     if (day.robbed) story(`A heist came off: ${coins(day.robbed - day.crew)} out of the house`, line(COPY.robbed))
-    else story(`A heist failed and cost its crew ${coins(day.crew)}`, line(COPY.foiled))
+    else {
+      const booked = ledger.sql.exec<{ user_id: string }>("select distinct user_id from arrests where at > ?", since).toArray()
+      story(`A heist failed and cost its crew ${coins(day.crew)}`, line(COPY.foiled), booked.length > 0 && `Booked: ${names(booked.map((row) => row.user_id))}.`)
+    }
   }
   if (day.bets && best && worst) {
     const off = `off ${count(day.bets, "bet", "bets").toLowerCase()}`
