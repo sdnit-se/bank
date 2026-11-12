@@ -17,6 +17,7 @@ import {
   type MarketStats,
   type Me,
   type Portfolio,
+  type Shop,
   toCents,
 } from "../shared/types"
 import { announceRate, bonded, bondHelp, bonds } from "./bonds"
@@ -30,7 +31,7 @@ import { casinoStats, sources } from "./stats"
 import { bounties, bountyClick, bountyHelp } from "./bounties"
 import { refreshFrontPage } from "./canvas"
 import { publishHome } from "./home"
-import { shop, shopClick, shopHelp } from "./shop"
+import { buy, setupShop, shop, shopClick, shopFor, shopHelp, stock, unstock } from "./shop"
 import { interact } from "./tables"
 import { titles, titlesOf } from "./titles"
 import { levy, stimulus } from "./taxes"
@@ -202,6 +203,7 @@ export class Workspace extends DurableObject<Env> {
     }
     setup(this.sql)
     setupMarket(this.sql)
+    setupShop(this.sql)
     this.ctx.storage.transactionSync(() => convertToCents(this.sql))
   }
 
@@ -776,6 +778,38 @@ export class Workspace extends DurableObject<Env> {
     return { entries: rows.map((row) => this.entry(row)), people }
   }
 
+  // ---------- shops
+
+  shop(): Shop {
+    return shopFor(this.ledger())
+  }
+
+  /** Puts something on the viewer's shelf, or the bank's if they are an admin and say so, or changes it. */
+  async stock(viewer: Viewer, input: { id?: number | null; bank?: boolean; name: string; about?: string; price: number; stock?: number | null }) {
+    this.assertActive(viewer)
+    const problem = stock(this.ledger(), viewer.id, input)
+    if (problem) throw new Error(problem)
+    this.ctx.waitUntil(refreshFrontPage(this.ledger()))
+    return shopFor(this.ledger())
+  }
+
+  async unstock(viewer: Viewer, id: number) {
+    this.assertActive(viewer)
+    const problem = unstock(this.ledger(), viewer.id, Number(id))
+    if (problem) throw new Error(problem)
+    this.ctx.waitUntil(refreshFrontPage(this.ledger()))
+    return shopFor(this.ledger())
+  }
+
+  async buy(viewer: Viewer, id: number) {
+    this.assertActive(viewer)
+    const before = this.lastEntry()
+    const answer = await buy(this.ledger(), viewer.id, Number(id), "web")
+    if (this.lastEntry() === before) throw new Error(answer.text)
+    this.ctx.waitUntil(refreshFrontPage(this.ledger()))
+    return { ...shopFor(this.ledger()), message: answer.text }
+  }
+
   async give(viewer: Viewer, to: string, amount: number, note: string | null) {
     this.assertActive(viewer)
     const result = await this.transfer(viewer.id, to, amount, note?.slice(0, 280) ?? null, "give")
@@ -822,10 +856,6 @@ export class Workspace extends DurableObject<Env> {
       games: { enabled: Boolean(games.enabled), maxBet: whole(games.maxBet, 1), reserve: whole(games.reserve, 0) },
       market: { enabled: Boolean(market.enabled), fee: rate(market.fee, 25) },
       taxes: { transfer: rate(taxes.transfer, 50), winnings: rate(taxes.winnings, 90), wealth: rate(taxes.wealth, 50), wealthAbove: whole(taxes.wealthAbove, 0), interest: rate(taxes.interest, 50) },
-      shop: (input.shop ?? this.settings().shop)
-        .map((item) => ({ name: clean(item.name, 60).replace(/[<>&*_~`]/g, ""), price: whole(item.price, 1) }))
-        .filter((item) => item.name)
-        .slice(0, 20),
       channel: /^C[A-Z0-9]+$/.test(input.channel ?? this.settings().channel) ? (input.channel ?? this.settings().channel) : "",
     }
     // Bank can only post where it is a member.
@@ -1178,7 +1208,7 @@ export class Workspace extends DurableObject<Env> {
       casinoHelp(config),
       marketHelp(config),
       bondHelp(config),
-      shopHelp(config),
+      shopHelp(this.ledger()),
       [`<${this.env.PUBLIC_URL}|open bank> · the leaderboard, the economy, and who the casino has ruined`],
     ]
       .map((lines) => lines.filter(Boolean).join("\n"))

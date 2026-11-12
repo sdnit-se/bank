@@ -1,4 +1,4 @@
-import type { Admin, CasinoStats, Channel, Config, CustomEmoji, Economy, History, Leaderboard, MarketStats, Me, Portfolio } from "../shared/types"
+import type { Admin, CasinoStats, Channel, Config, CustomEmoji, Economy, History, Leaderboard, MarketStats, Me, Portfolio, Shop } from "../shared/types"
 
 export const BASE = "/bank"
 
@@ -25,6 +25,9 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 
 export type Person = { id: string; name: string; image: string | null }
 
+/** Something to put on a shelf, or a change to it. `bank` puts it on the bank's shelf, for admins. */
+export type Stocked = { id?: number; bank?: boolean; name: string; about: string; price: number; stock: number | null }
+
 export const api = {
   me: () => request<Me>("GET", "/me"),
   leaderboard: () => request<Leaderboard>("GET", "/leaderboard"),
@@ -34,6 +37,10 @@ export const api = {
   market: () => request<MarketStats>("GET", "/market"),
   history: () => request<History>("GET", "/history"),
   people: () => request<Person[]>("GET", "/people"),
+  shop: () => request<Shop>("GET", "/shop"),
+  stock: (input: Stocked) => request<Shop>("PUT", "/shop", input),
+  unstock: (id: number) => request<Shop>("DELETE", "/shop", { id }),
+  buy: (id: number) => request<Shop & { message: string }>("POST", "/shop/buy", { id }),
   give: (to: string, amount: number, note: string) => request<{ balance: number }>("POST", "/give", { to, amount, note }),
   allHistory: () => request<History>("GET", "/admin/history"),
   saveConfig: (config: Config) => request<Config>("PUT", "/admin/config", config),

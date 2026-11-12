@@ -17,7 +17,6 @@ export function inCents(config: Config): Config {
     emoji: config.emoji.map((item) => ({ ...item, amount: item.amount * CENTS })),
     games: { ...config.games, maxBet: config.games.maxBet * CENTS, reserve: config.games.reserve * CENTS },
     taxes: { ...config.taxes, wealthAbove: config.taxes.wealthAbove * CENTS },
-    shop: config.shop.map((item) => ({ ...item, price: item.price * CENTS })),
   }
 }
 

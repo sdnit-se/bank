@@ -27,8 +27,24 @@ export type Taxes = {
   interest: number
 }
 
-/** Something an admin has put a price on. Bank takes the coins; handing it over is up to a human. */
-export type ShopItem = { name: string; price: number }
+/**
+ * Something for sale. The bank's own shop is run by admins and is paid to the central bank; anyone else's is theirs
+ * and paid to them. Bank takes the coins; handing the thing over is up to a human. Prices are in coins.
+ */
+export type Listing = {
+  id: number
+  /** Who is selling it: someone's id, or the central bank's for the bank's own shop. */
+  seller: string
+  name: string
+  /** What the buyer gets and how, in the seller's words. */
+  about: string
+  price: number
+  /** How many are left, or null for as many as anyone wants. */
+  stock: number | null
+  sold: number
+}
+
+export type Shop = { listings: Listing[]; people: Record<string, { name: string; image: string | null }> }
 
 export type Config = {
   singular: string
@@ -41,7 +57,6 @@ export type Config = {
   games: Games
   market: Market
   taxes: Taxes
-  shop: ShopItem[]
   /** The id of the channel the morning paper and the bank's other announcements go to. Empty until an admin picks one. */
   channel: string
 }
@@ -61,7 +76,6 @@ export const defaultConfig: Config = {
   games: { enabled: false, maxBet: 25, reserve: 500 },
   market: { enabled: false, fee: 1 },
   taxes: { transfer: 0, winnings: 0, wealth: 0, wealthAbove: 200, interest: 0 },
-  shop: [],
   channel: "",
 }
 
@@ -74,8 +88,8 @@ export const defaultConfig: Config = {
  * goes to the central bank. `print` is the market creating the coins it lacks to pay someone who sold at a profit:
  * along with a grant or an adjustment, the only kind that adds to how many coins exist.
  *
- * `bond` is coins going into a bond and coming back out, and `shop` is someone paying the central bank for something
- * an admin put a price on. `bounty` is coins put up for a job, or handed back when it is called off; paying one out is
+ * `bond` is coins going into a bond and coming back out, and `shop` is someone paying for something in a shop: the
+ * bank's, paid to the central bank, or a colleague's, paid to them. `bounty` is coins put up for a job, or handed back when it is called off; paying one out is
  * a `give` from the bounty board, since that is what it is.
  */
 export type EntryKind =

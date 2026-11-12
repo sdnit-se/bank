@@ -30,7 +30,8 @@ Slack doesn't let apps upload custom emoji, so workspaces add the coin images th
 - **A canvas** in the bank's channel showing where things stand: the leaderboard, the bounty board, open bets and
   the rates, rewritten after anything public happens (`src/server/canvas.ts`).
 - **Titles**, each one question asked of the ledger once a day (`/bank titles`, `src/server/titles.ts`), and **a
-  shop** where coins buy what an admin has put a price on (`/bank shop`, `src/server/shop.ts`).
+  shop**: admins run the bank's, paid to the central bank, and anyone can open their own and keep what it makes
+  (`/bank shop`, `/bank shop sell 10 a code review`, the Shop tab, `src/server/shop.ts`).
 - **An Economy tab**: money supply, GDP (coins given between people), inflation, and who holds what.
 - **A Casino tab**: what the games have done to everyone. Total staked, the house's take, biggest winners and
   losers, losing streaks, returns by game and every lottery draw, all read off the ledger (`src/server/stats.ts`).

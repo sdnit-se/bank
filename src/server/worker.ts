@@ -271,6 +271,10 @@ async function api(request: Request, env: Env, path: string) {
   if (route === "GET /market") return ws.market()
   if (route === "GET /history") return ws.history(user, "mine")
   if (route === "GET /people") return ws.people(user)
+  if (route === "GET /shop") return ws.shop()
+  if (route === "PUT /shop") return ws.stock(user, await body<Parameters<typeof ws.stock>[1]>())
+  if (route === "DELETE /shop") return ws.unstock(user, (await body<{ id: number }>()).id)
+  if (route === "POST /shop/buy") return ws.buy(user, (await body<{ id: number }>()).id)
   if (route === "POST /give") {
     const input = await body<{ to: string; amount: number; note?: string }>()
     return ws.give(user, input.to, toCents(input.amount) ?? Number.NaN, input.note?.trim() || null)

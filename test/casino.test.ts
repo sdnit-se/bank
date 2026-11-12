@@ -5,7 +5,7 @@ import { play, settle } from "../src/server/casino"
 import type { Rand } from "../src/server/games"
 import type { Message } from "../src/server/ledger"
 import { bounties, bountyClick } from "../src/server/bounties"
-import { shop, shopClick } from "../src/server/shop"
+import { shop, shopClick, stock, unstock } from "../src/server/shop"
 import { sources } from "../src/server/stats"
 import { interact } from "../src/server/tables"
 import { BOUNTIES, CENTRAL, CENTS, HOUSE, nextDraw, POOLS, POT } from "../src/shared/types"
@@ -286,18 +286,26 @@ test("an office bet pays the whole pot to the side that was right, and gives sta
   expect(w.total()).toBe(400)
 })
 
-test("the shop takes the price for the central bank, and only from someone who has it", async () => {
+test("a shop pays whoever runs it, the bank's pays the central bank, and only its owner can change it", async () => {
   const w = world()
-  w.config.shop = [{ name: "Pick the lunch place", price: 60 * CENTS }]
+  w.join(C)
+  w.ledger.admin = (id: string) => id === A
+  w.config.taxes.transfer = 10
   const ask = (user: string, ...words: string[]) => shop(w.ledger, { sub: "shop", words, user })
-  expect((await ask(A))!.blocks).toHaveLength(2)
-  expect((await ask(A, "1"))!.response_type).toBe("in_channel")
-  expect([w.balance(A), w.balance(CENTRAL)]).toEqual([40, 60])
-  expect((await ask(A, "1"))!.response_type).toBe("ephemeral")
-  expect((await shopClick(w.ledger, { user: B, action: "shop_buy", value: "Pick the lunch place" }))!.response_type).toBe("in_channel")
-  expect((await shopClick(w.ledger, { user: B, action: "shop_buy", value: "A pony" }))!.text).toContain("doesn't sell that")
-  expect([w.balance(B), w.balance(CENTRAL)]).toEqual([40, 120])
-  expect(w.total()).toBe(200)
+  expect(stock(w.ledger, B, { bank: true, name: "Pick the lunch place", price: 60 })).toBe("that isn't your shop.")
+  expect(stock(w.ledger, A, { bank: true, name: "Pick the lunch place", price: 60 })).toBeNull()
+  expect(stock(w.ledger, B, { name: "A code review", price: 10, stock: 1 })).toBeNull()
+  expect(unstock(w.ledger, A, 2)).toBe("that isn't your shop.")
+
+  // A buys B's review: B is paid, less the transfer tax, and told directly. Then it's sold out.
+  expect((await ask(A, "2"))!.response_type).toBe("in_channel")
+  expect([w.balance(A), w.balance(B), w.balance(CENTRAL)]).toEqual([90, 109, 1])
+  expect(w.posts.at(-1)).toMatchObject({ channel: B })
+  expect((await ask(C, "2"))!.text).toContain("sold out")
+  expect((await ask(B, "1"))!.response_type).toBe("in_channel")
+  expect((await shopClick(w.ledger, { user: C, action: "shop_buy", value: "Pick the lunch place" }))!.response_type).toBe("in_channel")
+  expect([w.balance(B), w.balance(C), w.balance(CENTRAL)]).toEqual([49, 40, 121])
+  expect(w.total()).toBe(300)
 })
 
 test("a bounty holds everyone's coins until the poster pays them, as a thank-you, to someone else", async () => {

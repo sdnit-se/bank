@@ -3,7 +3,7 @@
 //
 // Amounts are in cents, like the rest of the ledger.
 
-import { BONDS, BOUNTIES, nextDraw, type Config, type EntryKind } from "../shared/types"
+import { BONDS, BOUNTIES, CENTRAL, nextDraw, type Config, type EntryKind } from "../shared/types"
 import type { Env } from "./env"
 import type { Rand } from "./games"
 
@@ -80,7 +80,8 @@ export function historyLine(row: { kind: string; from_id: string | null; to_id: 
     case "bond":
       return row.to_id === BONDS ? `-${amount} into a bond at ${row.note}` : `+${amount} back from a bond`
     case "shop":
-      return `-${amount} at the shop for ${row.note}`
+      if (row.to_id === user) return `+${amount} for ${row.note}, sold to <@${row.from_id}>`
+      return row.to_id === CENTRAL ? `-${amount} at the bank's shop for ${row.note}` : `-${amount} for ${row.note} from <@${row.to_id}>`
     case "bounty":
       return row.to_id === user ? `+${amount} back from a bounty that was called off` : `-${amount} on a bounty: ${row.note}`
     case "give":

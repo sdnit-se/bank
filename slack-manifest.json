@@ -3,7 +3,7 @@
     "name": "Bank",
     "description": "A tiny currency for our Slack, with a casino, a stock market and a newspaper attached.",
     "background_color": "#1a1a1a",
-    "long_description": "Everyone starts with 100 coins. Give them away when someone helps you out: react to their message with a coin emoji, or run /bank give @someone 10. /bank balance, /bank top and /bank history show where you stand. /bank bounty puts coins up for getting something done, paid to whoever does it.\n\nThen lose them. /bank flip, /bank slots, /bank duel, /bank heist and /bank lottery are the casino, and /bank pool takes bets on whatever the office is arguing about. /bank shop is where coins buy something. /bank buy, /bank sell and /bank portfolio trade real stocks and crypto at real prices with play money. /bank help lists everything.\n\nThe leaderboard, the state of the economy and the casino's hall of shame are at https://labs.shebang.se/bank."
+    "long_description": "Everyone starts with 100 coins. Give them away when someone helps you out: react to their message with a coin emoji, or run /bank give @someone 10. /bank balance, /bank top and /bank history show where you stand. /bank bounty puts coins up for getting something done, paid to whoever does it.\n\nThen lose them. /bank flip, /bank slots, /bank duel, /bank heist and /bank lottery are the casino, and /bank pool takes bets on whatever the office is arguing about. /bank shop is where coins buy something, from the bank or from a colleague, and /bank shop sell 10 a code review opens your own. /bank buy, /bank sell and /bank portfolio trade real stocks and crypto at real prices with play money. /bank help lists everything.\n\nThe leaderboard, the state of the economy and the casino's hall of shame are at https://labs.shebang.se/bank."
   },
   "features": {
     "app_home": {
@@ -128,7 +128,8 @@
       {
         "command": "/bank-shop",
         "url": "https://labs.shebang.se/bank/slack/commands",
-        "description": "What your coins can buy",
+        "description": "What your coins can buy, or sell something yourself",
+        "usage_hint": "[3 | @someone | mine | sell 10 a code review | remove 3]",
         "should_escape": true
       },
       {

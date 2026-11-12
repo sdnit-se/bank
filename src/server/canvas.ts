@@ -5,7 +5,8 @@
 // Bank only ever edits the canvas it made itself. A channel that already has someone else's canvas is left alone,
 // and the admin page says why.
 
-import { BOUNTIES, CENTRAL, HOUSE, POT } from "../shared/types"
+import { BOUNTIES, CENTRAL, CENTS, HOUSE, POT } from "../shared/types"
+import { shopFor } from "./shop"
 import { openBounties } from "./bounties"
 import { held, type Ledger } from "./ledger"
 import { money } from "./money"
@@ -84,9 +85,16 @@ function page(ledger: Ledger) {
     ].join(" "),
   )
 
-  if (config.shop.length) {
+  const forSale = shopFor(ledger).listings.filter((item) => item.stock !== 0)
+  if (forSale.length) {
     out.push("## :shopping_bags: Shop")
-    out.push(table(["#", "What", "Price"], config.shop.map((item, index) => [String(index + 1), cell(ledger, item.name), coins(item.price)])))
+    out.push(
+      table(
+        ["#", "What", "From", "Price"],
+        forSale.slice(0, 15).map((item) => [String(item.id), cell(ledger, item.name), item.seller === CENTRAL ? "The bank" : who(item.seller), coins(item.price * CENTS)]),
+      ),
+    )
+    out.push(`\`/bank shop 3\` buys #3, and \`/bank shop sell 10 a code review\` opens a shop of your own.`)
   }
   return out.join("\n\n")
 }

@@ -10,8 +10,8 @@ import { Tabs } from "@opencode/ui/tabs"
 import { TextInput } from "@opencode/ui/text-input"
 import { createMemo, createResource, createRoot, createSignal, For, type JSX, Match, Show, Switch } from "solid-js"
 import { createStore, reconcile, unwrap } from "solid-js/store"
-import { amountText, BONDS, BOUNTIES, CENTRAL, currency, HOUSE, INSTITUTIONS, type Config, type CustomEmoji, type Entry, type History, type Me } from "../shared/types"
-import { api, ApiError, BASE, type Person } from "./api"
+import { amountText, BONDS, BOUNTIES, CENTRAL, currency, HOUSE, INSTITUTIONS, type Config, type CustomEmoji, type Entry, type History, type Listing, type Me, type Shop } from "../shared/types"
+import { api, ApiError, BASE, type Person, type Stocked } from "./api"
 import { CasinoView } from "./casino"
 import { EconomyView } from "./economy"
 import { MarketBoard, PortfolioView } from "./portfolio"
@@ -282,6 +282,7 @@ function Dashboard(props: { me: Me; refresh: () => void }) {
             <Show when={config().market.enabled}>
               <Tabs.Trigger value="portfolio">Market</Tabs.Trigger>
             </Show>
+            <Tabs.Trigger value="shop">Shop</Tabs.Trigger>
             <Tabs.Trigger value="give">Give</Tabs.Trigger>
             <Show when={props.me.admin}>
               <Tabs.Trigger value="admin">Admin</Tabs.Trigger>
@@ -307,6 +308,9 @@ function Dashboard(props: { me: Me; refresh: () => void }) {
               <PortfolioView config={config()} portfolio={portfolio()} />
               <MarketBoard stats={market()} />
             </div>
+          </Match>
+          <Match when={tab() === "shop"}>
+            <ShopView me={props.me} done={reload} />
           </Match>
           <Match when={tab() === "give"}>
             <GiveView me={props.me} done={reload} />
@@ -470,7 +474,7 @@ function describe(entry: Entry, history: History, viewer: string | null) {
     case "bond":
       return entry.to === BONDS ? `${name(entry.from)} bought a bond at ${entry.note}` : `${possessive(entry.to)} bond matured`
     case "shop":
-      return `${name(entry.from)} bought ${entry.note} in the shop`
+      return entry.to === CENTRAL ? `${name(entry.from)} bought ${entry.note} in the bank's shop` : `${name(entry.from)} bought ${entry.note} from ${name(entry.to)}`
     case "bounty":
       return entry.from === BOUNTIES ? `${name(entry.to)} got a bounty stake back` : `${name(entry.from)} put coins on a bounty`
     case "print":
@@ -811,6 +815,251 @@ function GiveView(props: { me: Me; done: () => void }) {
   )
 }
 
+// ---------- shops
+
+/**
+ * Everyone's shops in one place: what's for sale, the viewer's own shelf, and for admins the bank's. Buying pays the
+ * seller (the central bank, for the bank's things) and tells them; handing the thing over is up to them.
+ */
+function ShopView(props: { me: Me; done: () => void }) {
+  const [shop, { mutate }] = createResource(() => api.shop())
+  const [status, setStatus] = createSignal<{ kind: "error" | "ok"; text: string } | null>(null)
+  const [buying, setBuying] = createSignal<number | null>(null)
+  const me = () => props.me.user.id
+  const balance = () => props.me.account?.balance ?? 0
+  const shelf = (seller: string) => (shop()?.listings ?? []).filter((item) => item.seller === seller)
+  const forSale = createMemo(() => (shop()?.listings ?? []).filter((item) => item.seller !== me()))
+  const buy = async (item: Listing) => {
+    setBuying(item.id)
+    setStatus(null)
+    try {
+      const result = await api.buy(item.id)
+      mutate(result)
+      setStatus({ kind: "ok", text: `Bought ${item.name}. ${shop()?.people[item.seller]?.name ?? "The seller"} has been told.` })
+      props.done()
+    } catch (error) {
+      setStatus({ kind: "error", text: (error as Error).message })
+    } finally {
+      setBuying(null)
+    }
+  }
+  return (
+    <div class="flex flex-col gap-4">
+      <Panel
+        title="For sale"
+        description={
+          <>
+            What colleagues offer, and what the bank sells. Or <Code>/bank shop</Code> in Slack.
+          </>
+        }
+        action={<Status value={status()} />}
+      >
+        <Show when={shop()} fallback={<Empty>Loading…</Empty>}>
+          <Show when={forSale().length} fallback={<Empty>Nothing for sale yet. Be the first: put something on your shelf below.</Empty>}>
+            <For each={forSale()}>
+              {(item) => {
+                const seller = () => shop()!.people[item.seller]
+                const out = () => item.stock === 0
+                return (
+                  <div class="row flex items-center gap-3 px-4 py-2.5">
+                    <Show when={item.seller !== CENTRAL} fallback={<Coin src={symbolUrl(props.me)} size={32} />}>
+                      <Avatar src={seller()?.image ?? undefined} fallback={seller()?.name ?? "?"} size="large" />
+                    </Show>
+                    <div class="flex-1 min-w-0 flex flex-col">
+                      <span class="truncate strong">{item.name}</span>
+                      <span class="faint truncate">
+                        {item.seller === CENTRAL ? "The bank" : (seller()?.name ?? "Someone")}
+                        {item.stock === null ? "" : out() ? " · sold out" : ` · ${item.stock} left`}
+                        {item.about ? ` · ${item.about}` : ""}
+                      </span>
+                    </div>
+                    <span class="strong shrink-0">
+                      <Amount me={props.me} value={item.price} />
+                    </span>
+                    <Button
+                      variant="neutral"
+                      size="small"
+                      disabled={out() || buying() !== null || balance() < item.price}
+                      title={balance() < item.price ? "You don't have enough" : undefined}
+                      onClick={() => buy(item)}
+                    >
+                      {buying() === item.id ? "Buying…" : "Buy"}
+                    </Button>
+                  </div>
+                )
+              }}
+            </For>
+          </Show>
+        </Show>
+      </Panel>
+
+      <Panel
+        overflow
+        title="Your shop"
+        description={
+          <>
+            Sell anything you're willing to do or hand over. Buyers pay you, you get a message from Bank, and the rest is up
+            to you. Or <Code>/bank shop sell 10 a code review</Code>.
+          </>
+        }
+      >
+        <Shelf me={props.me} items={shop() ? shelf(me()) : undefined} changed={mutate} empty="Nothing on your shelf yet. Reviews, lunch picks and cookies have all been known to sell." />
+      </Panel>
+
+      <Show when={props.me.admin}>
+        <Panel overflow title="The bank's shop" description="Paid to the central bank, so spending here funds the bonds and the lottery. You hand the thing over.">
+          <Shelf bank me={props.me} items={shop() ? shelf(CENTRAL) : undefined} changed={mutate} empty="Nothing for sale. Picking the lunch place and choosing Friday's playlist are popular." />
+        </Panel>
+      </Show>
+    </div>
+  )
+}
+
+/** One shelf someone can change: what is on it, each with Edit and Remove, and a form for something new. */
+function Shelf(props: { me: Me; bank?: boolean; items: Listing[] | undefined; changed: (shop: Shop) => void; empty: string }) {
+  const [editing, setEditing] = createSignal<number | null>(null)
+  const [adding, setAdding] = createSignal(false)
+  const remove = async (item: Listing) => {
+    if (!confirm(`Take ${item.name} off the shelf?`)) return
+    props.changed(await api.unstock(item.id))
+  }
+  return (
+    <Show when={props.items} fallback={<Empty>Loading…</Empty>}>
+      {(items) => (
+        <div class="px-4 pb-4 flex flex-col gap-3">
+          <div class="inset">
+            <For each={items()} fallback={<Empty>{props.empty}</Empty>}>
+              {(item) => (
+                <Show
+                  when={editing() === item.id}
+                  fallback={
+                    <div class="row flex items-center gap-3 px-3 py-2">
+                      <div class="flex-1 min-w-0 flex flex-col">
+                        <span class="truncate strong">{item.name}</span>
+                        <span class="faint truncate">
+                          {item.sold} sold{item.stock === null ? "" : ` · ${item.stock} left`}
+                          {item.about ? ` · ${item.about}` : ""}
+                        </span>
+                      </div>
+                      <span class="strong shrink-0">
+                        <Amount me={props.me} value={item.price} />
+                      </span>
+                      <Button variant="ghost-muted" size="small" onClick={() => setEditing(item.id)}>
+                        Edit
+                      </Button>
+                      <IconButton
+                        variant="ghost-muted"
+                        aria-label={`Remove ${item.name}`}
+                        title="Remove"
+                        icon={<Icon name="outline-trash" size="small" />}
+                        onClick={() => remove(item)}
+                      />
+                    </div>
+                  }
+                >
+                  <ListingForm me={props.me} item={item} bank={props.bank} done={(shop) => (props.changed(shop), setEditing(null))} cancel={() => setEditing(null)} />
+                </Show>
+              )}
+            </For>
+          </div>
+          <Show
+            when={adding()}
+            fallback={
+              <div>
+                <Button variant="ghost-muted" size="small" onClick={() => setAdding(true)}>
+                  Put something up for sale
+                </Button>
+              </div>
+            }
+          >
+            <div class="inset">
+              <ListingForm me={props.me} bank={props.bank} done={(shop) => (props.changed(shop), setAdding(false))} cancel={() => setAdding(false)} />
+            </div>
+          </Show>
+        </div>
+      )}
+    </Show>
+  )
+}
+
+/** The fields of one thing for sale. Saving puts it on the shelf, or changes it if it's already there. */
+function ListingForm(props: { me: Me; item?: Listing; bank?: boolean; done: (shop: Shop) => void; cancel: () => void }) {
+  const [draft, setDraft] = createStore({
+    name: props.item?.name ?? "",
+    about: props.item?.about ?? "",
+    price: props.item ? String(props.item.price) : "",
+    stock: props.item?.stock === null || props.item?.stock === undefined ? "" : String(props.item.stock),
+  })
+  const [status, setStatus] = createSignal<{ kind: "error" | "ok"; text: string } | null>(null)
+  const [busy, setBusy] = createSignal(false)
+  const submit = async (event: Event) => {
+    event.preventDefault()
+    setBusy(true)
+    setStatus(null)
+    const input: Stocked = {
+      id: props.item?.id,
+      bank: props.bank,
+      name: draft.name,
+      about: draft.about,
+      price: Number(draft.price),
+      stock: draft.stock === "" ? null : Number(draft.stock),
+    }
+    try {
+      props.done(await api.stock(input))
+    } catch (error) {
+      setStatus({ kind: "error", text: (error as Error).message })
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <form class="p-3 flex flex-col gap-3" onSubmit={submit}>
+      <div class="grid grid-cols-1 sm:grid-cols-[1fr_112px_112px] gap-3">
+        <Label text="What it is">
+          <TextInput class="w-full" placeholder="A code review" value={draft.name} onInput={(event) => setDraft("name", event.currentTarget.value)} />
+        </Label>
+        <Label text="Price">
+          <TextInput
+            class="w-full"
+            numeric
+            inputmode="decimal"
+            placeholder="10"
+            value={draft.price}
+            onInput={(event) => setDraft("price", event.currentTarget.value.replace(",", ".").replace(/[^0-9.]/g, ""))}
+          />
+        </Label>
+        <Label text="How many" hint="optional">
+          <TextInput
+            class="w-full"
+            numeric
+            inputmode="numeric"
+            placeholder="No limit"
+            value={draft.stock}
+            onInput={(event) => setDraft("stock", event.currentTarget.value.replace(/[^0-9]/g, ""))}
+          />
+        </Label>
+      </div>
+      <Label text="What they get" hint="optional">
+        <TextInput
+          class="w-full"
+          placeholder="I read the whole diff, not just the tests, within a working day"
+          value={draft.about}
+          onInput={(event) => setDraft("about", event.currentTarget.value)}
+        />
+      </Label>
+      <div class="flex items-center gap-2">
+        <Button type="submit" variant="contrast" disabled={busy() || !draft.name.trim() || !draft.price}>
+          {busy() ? "Saving…" : props.item ? "Save" : "Put it up"}
+        </Button>
+        <Button variant="ghost-muted" onClick={props.cancel}>
+          Cancel
+        </Button>
+        <Status value={status()} />
+      </div>
+    </form>
+  )
+}
+
 // ---------- admin
 
 function EmojiImage(props: { url: string | undefined; size?: number }) {
@@ -1054,52 +1303,6 @@ function SettingsPanel(props: { me: Me; changed: () => void }) {
             label={(channel) => channel.name}
             onSelect={(channel) => setDraft("channel", channel?.id ?? "")}
           />
-        </div>
-
-        <div class="flex flex-col gap-2">
-          <div class="flex items-baseline justify-between gap-3">
-            <span class="strong">Shop</span>
-            <span class="faint">
-              What {draft.plural} can buy, under <Code>/bank shop</Code>. Bank takes the payment for the central bank; you hand the thing over.
-            </span>
-          </div>
-          <div class="inset">
-            <For each={draft.shop} fallback={<Empty>Nothing for sale. Picking the lunch place and choosing Friday's playlist are popular.</Empty>}>
-              {(item, index) => (
-                <div class="row flex items-center gap-2 px-2 py-1.5">
-                  <TextInput
-                    class="flex-1 min-w-0 w-auto"
-                    surface="invisible"
-                    aria-label="What it is"
-                    placeholder="Pick the lunch place"
-                    value={item.name}
-                    onInput={(event) => setDraft("shop", index(), "name", event.currentTarget.value)}
-                  />
-                  <TextInput
-                    class="w-[104px] shrink-0"
-                    numeric
-                    inputmode="numeric"
-                    aria-label="Price"
-                    value={String(item.price)}
-                    onInput={(event) => setDraft("shop", index(), "price", Number(event.currentTarget.value.replace(/[^0-9]/g, "")) || 0)}
-                    trailing={<span class="faint pr-1 truncate max-w-12">{item.price === 1 ? draft.singular : draft.plural}</span>}
-                  />
-                  <IconButton
-                    variant="ghost-muted"
-                    aria-label={`Remove ${item.name}`}
-                    title="Remove"
-                    icon={<Icon name="outline-trash" size="small" />}
-                    onClick={() => setDraft("shop", (list) => list.filter((_, i) => i !== index()))}
-                  />
-                </div>
-              )}
-            </For>
-          </div>
-          <div>
-            <Button variant="ghost-muted" size="small" onClick={() => setDraft("shop", (list) => [...list, { name: "", price: 50 }])}>
-              Add something to sell
-            </Button>
-          </div>
         </div>
 
         <div class="flex flex-col gap-2">

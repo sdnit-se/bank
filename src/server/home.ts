@@ -1,7 +1,8 @@
 // The Home tab: what someone sees when they open Bank in Slack. It is drawn again each time they open it, from the
 // same tables the commands read, so there is nothing to keep in step. Read-only: everything it shows has a command.
 
-import { POT } from "../shared/types"
+import { CENTS, POT } from "../shared/types"
+import { shopFor } from "./shop"
 import { bonded } from "./bonds"
 import { openBounties } from "./bounties"
 import { drawTime } from "./casino"
@@ -68,8 +69,18 @@ export async function publishHome(ledger: Ledger, user: string) {
   const bonds = ledger.sql.exec<{ amount: number; rate: number; matures: number }>("select amount, rate, matures from bonds where user_id = ? order by matures", user).toArray()
   if (bonds.length) part("Your bonds", bonds.map((bond) => `• ${coins(bond.amount)} at ${bond.rate}% · back <!date^${Math.floor(bond.matures / 1000)}^{date_short_pretty}|in a week>`), "")
 
-  if (config.shop.length) {
-    part("Shop", config.shop.map((item, index) => `${index + 1}. *${item.name}* · ${coins(item.price)}${row.balance < item.price ? "" : ` · \`/bank shop ${index + 1}\``}`), "")
+  const shop = shopFor(ledger)
+  const forSale = shop.listings.filter((item) => item.stock !== 0 && item.seller !== user)
+  const selling = shop.listings.filter((item) => item.seller === user)
+  if (forSale.length || selling.length) {
+    part(
+      "Shop",
+      [
+        ...forSale.slice(0, 8).map((item) => `• *${item.name}* · ${coins(item.price * CENTS)} · ${shop.people[item.seller]?.name ?? "someone"}${row.balance < item.price * CENTS ? "" : ` · \`/bank shop ${item.id}\``}`),
+        selling.length ? `You sell ${selling.length === 1 ? "one thing" : `${selling.length} things`}, and have sold ${selling.reduce((sum, item) => sum + item.sold, 0)}.` : "",
+      ].filter(Boolean),
+      "",
+    )
   }
 
   blocks.push({ type: "divider" }, context("`/bank help` lists everything"))

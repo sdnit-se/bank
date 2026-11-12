@@ -144,7 +144,7 @@ export async function publish(ledger: Ledger, round: Round, now = Date.now()) {
       day.traded += row.amount
     } else if (row.kind === "duel") day.duels++
     else if (row.kind === "bond" && row.to_id === BONDS) day.lent += row.amount
-    else if (row.kind === "shop") bought.push(`${at(row.from_id!)} bought "${row.note}" for ${coins(row.amount)}`)
+    else if (row.kind === "shop") bought.push(`${at(row.from_id!)} bought "${row.note}" ${row.to_id === CENTRAL ? "" : `from ${at(row.to_id!)} `}for ${coins(row.amount)}`)
   }
   const ranked = [...net].sort((a, b) => b[1] - a[1])
   const [best, worst] = [ranked[0], ranked.at(-1)]
