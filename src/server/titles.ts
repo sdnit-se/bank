@@ -14,7 +14,13 @@ export const TITLES: { name: string; how: string; who: string }[] = [
   { name: "Pillar of the community", how: "be thanked with 250 by colleagues", who: `select id from accounts where received >= ${coins(250)}` },
   { name: "High roller", how: "stake 1,000 in all", who: `select from_id as id from entries where kind = 'bet' group by from_id having sum(amount) >= ${coins(1000)}` },
   { name: "Regular", how: "place 100 bets", who: "select from_id as id from entries where kind = 'bet' group by from_id having count(*) >= 100" },
-  { name: "Whale", how: "win 100 or more on a single bet", who: `select to_id as id from entries where kind = 'payout' and from_id = '${HOUSE}' and amount >= ${coins(100)}` },
+  {
+    name: "Whale",
+    how: "come out 100 or more ahead on a single bet",
+    // A payout includes the stake, so what it came to is the payout less the stake on the same game just before it.
+    who: `select p.to_id as id from entries p where p.kind = 'payout' and p.from_id = '${HOUSE}' and p.amount - (select b.amount from entries b
+      where b.kind = 'bet' and b.to_id = '${HOUSE}' and b.from_id = p.to_id and b.note = p.note and b.id < p.id order by b.id desc limit 1) >= ${coins(100)}`,
+  },
   { name: "Rock bottom", how: "gamble your way down to nothing", who: "select id from accounts where balance = 0 and gone = 0 and id in (select from_id from entries where kind = 'bet')" },
   { name: "Lottery winner", how: "win the daily draw", who: `select to_id as id from entries where kind = 'payout' and from_id = '${POT}'` },
   { name: "Duellist", how: "win 10 duels", who: "select to_id as id from entries where kind = 'duel' group by to_id having count(*) >= 10" },

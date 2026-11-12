@@ -25,9 +25,9 @@ type Stake = { user_id: string; side: Side; amount: number }
 type Ruling = "close" | "off" | Side
 
 const SETTLED: Line[] = [
-  (w) => `${w.winners} called it and ${w.take} *${w.pot}*. ${w.losers} were wrong, in public, in writing.`,
-  (w) => `*${w.pot}* to ${w.winners}. ${w.losers} paid for the lesson and will learn nothing.`,
-  (w) => `${w.winners} ${w.take} *${w.pot}* off ${w.losers}, who had a strong feeling about it.`,
+  (w) => `${w.winners} called it and ${w.take} *${w.up}* of the other side's money. ${w.losers} were wrong, in public, in writing.`,
+  (w) => `*${w.up}* from ${w.losers} to ${w.winners}. the losing side paid for the lesson and will learn nothing.`,
+  (w) => `${w.winners} ${w.take} *${w.up}* off ${w.losers}, who had a strong feeling about it.`,
 ]
 
 const find = (ledger: Ledger, id: number) => ledger.sql.exec<Pool>("select * from pools where id = ?", id).toArray()[0] ?? null
@@ -140,7 +140,7 @@ function rule(ledger: Ledger, user: string, id: number, ruling: Ruling): Message
     tax += levy(ledger, { from: stake.user_id, amount: shares[index]! - stake.amount, rate: config.taxes.winnings, note: "winnings tax", actor: null })
   })
   const losers = list(all.filter((stake) => stake.side !== ruling).map((stake) => stake.user_id))
-  const words = { winners: list(winners.map((stake) => stake.user_id)), take: winners.length === 1 ? "takes" : "split", pot: money(config, pot), losers }
+  const words = { winners: list(winners.map((stake) => stake.user_id)), take: winners.length === 1 ? "takes" : "split", up: money(config, pot - backed), losers }
   const line = losers ? say(secureRand, SETTLED, words) : `${words.winners} called it, and nobody took the other side, so the prize is their own coins back.`
   return loud(`${title} · it's a *${ruling}*.\n${line}${taxed(config, tax)}`)
 }

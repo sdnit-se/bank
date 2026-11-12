@@ -71,7 +71,7 @@ const COPY = {
     (w) => `Collected from ${w.payers} who failed to lose it at blackjack in time. Let that be a lesson.`,
   ],
   called: [
-    (w) => `${w.who} ${w.collect} ${w.amount} for being right, a rare and poorly paid skill around here.`,
+    (w) => `${w.who} got paid for being right, a rare and poorly paid skill around here.`,
     (w) => `${w.who} called it. The other side was wrong, in public, with money, which is how every disagreement in this office should be settled.`,
   ],
   asked: [(w) => `Opinions are free. Being wrong costs coins: ${w.how}`],
@@ -200,7 +200,7 @@ export async function publish(ledger: Ledger, round: Round, now = Date.now()) {
     story(`${coins(day.lent)} went into bonds`, rate > 0 && line(COPY.lent, { rate: String(rate), yearly }))
   }
   if (round.wealth?.collected) story(`Wealth tax: ${coins(round.wealth.collected)}`, line(COPY.wealth, { payers: count(round.wealth.payers, "person", "people").toLowerCase() }))
-  if (callers.size) story(`An office bet settled for ${coins(day.pooled)}`, line(COPY.called, { who: names([...callers]), collect: callers.size === 1 ? "collects" : "collect", amount: coins(day.pooled) }))
+  if (callers.size) story(`An office bet settled for ${coins(day.pooled)}`, line(COPY.called, { who: names([...callers]) }))
   if (asked.length) story(`New office bet: "${asked[0]!.question}"`, line(COPY.asked, { how: asked.map((pool) => `\`/bank pool ${pool.id}\``).join(", ") }))
   if (round.expired.length) story(`"${round.expired[0]}" expired unanswered`, line(COPY.expired))
   if (day.trades) story(`${count(day.trades, "trade", "trades")} on the stock market, ${coins(day.traded)}`, line(COPY.trades))

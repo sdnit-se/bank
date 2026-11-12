@@ -130,7 +130,7 @@ function finish(ledger: Ledger, user: string, hand: Hand): Message {
   ledger.sql.exec("delete from hands where user_id = ?", user)
   if (paid > 0) ledger.move({ from: HOUSE, to: user, amount: paid, kind: "payout", note: "blackjack", actor: user })
   const tax = levy(ledger, { from: user, amount: paid - hand.stake, rate: config.taxes.winnings, note: "winnings tax" })
-  const line = handLine(secureRand, outcome, { user: `<@${user}>`, amount: money(config, hand.stake), win: money(config, paid) })
+  const line = handLine(secureRand, outcome, { user: `<@${user}>`, amount: money(config, hand.stake), win: money(config, paid), up: money(config, paid - hand.stake) })
   return loud(
     `:black_joker: dealer: ${showCards(dealer)} (${handTotal(dealer)}) · <@${user}>: ${showCards(hand.player)} (${handTotal(hand.player)})\n${line}${taxed(config, tax)}`,
   )
@@ -167,7 +167,7 @@ const crewOf = (heist: Heist) => heist.crew.map((id) => `<@${id}>`).join(", ")
 function heistCard(ledger: Ledger, heist: Heist): Message {
   const coins = (cents: number) => money(ledger.config(), cents)
   const text = [
-    `:moneybag: <@${heist.by_id}> is putting a crew together to rob the house. *${coins(heist.stake)}* each to get in, *${coins(heist.stake * HEIST_PAYS)}* each if it works.`,
+    `:moneybag: <@${heist.by_id}> is putting a crew together to rob the house. *${coins(heist.stake)}* each to get in, *${coins(heist.stake * (HEIST_PAYS - 1))}* each on top if it works.`,
     `crew: ${crewOf(heist)} · ${heistChance(heist.crew.length)}% chance, and every pair of hands up to five helps`,
     `\`/bank heist join\` to get in, and <@${heist.by_id}> says \`/bank heist go\`. ten minutes.`,
   ].join("\n")
@@ -226,6 +226,7 @@ export function runHeist(ledger: Ledger, user: string, id: number | null = null)
     was: crew.length === 1 ? "was" : "were",
     amount: money(config, heist.stake),
     win: money(config, heist.stake * HEIST_PAYS),
+    up: money(config, heist.stake * (HEIST_PAYS - 1)),
   }
   return loud(`${heistLine(secureRand, won, words)}${left.length ? ` ${left.join(", ")} couldn't pay and stayed in the van.` : ""}${taxed(config, tax)}`)
 }

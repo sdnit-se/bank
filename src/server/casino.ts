@@ -148,7 +148,7 @@ async function wager(
   const win = amount * result.pays
   if (win > 0) ledger.move({ from: HOUSE, to: user, amount: win, kind: "payout", note: game.name, actor: user })
   const tax = levy(ledger, { from: user, amount: win - amount, rate: config.taxes.winnings, note: "winnings tax" })
-  return loud(result.line({ user: `<@${user}>`, amount: coins(amount), win: coins(win) }) + taxed(config, tax))
+  return loud(result.line({ user: `<@${user}>`, amount: coins(amount), win: coins(win), up: coins(win - amount) }) + taxed(config, tax))
 }
 
 const flipCoin: Game = (bet) => {
@@ -347,7 +347,7 @@ export async function settle(ledger: Ledger) {
   const posted = await publish(ledger, { wealth, matured, expired, abandoned, lottery, honours: award(ledger) })
   // Bank can't post where it isn't a member, so a winner the paper didn't reach is told directly.
   if (lottery && !posted) {
-    const text = drawLine(secureRand, { winner: `<@${lottery.winner}>`, pot: currency(config, lottery.pot), share: `${lottery.mine} of ${lottery.sold}` }) + taxed(config, lottery.tax)
+    const text = drawLine(secureRand, { winner: `<@${lottery.winner}>`, pot: currency(config, lottery.pot), share: `${lottery.mine} of ${lottery.sold}`, own: currency(config, lottery.mine * CENTS) }) + taxed(config, lottery.tax)
     await ledger.call("chat.postMessage", { channel: lottery.winner, text, unfurl_links: false }).catch((error: unknown) => console.error("announcement failed", error))
   }
 

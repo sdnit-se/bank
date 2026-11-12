@@ -195,16 +195,16 @@ const SLOT_LINES: Record<SlotTier, Line[]> = {
     (w) => `${w.user} pays *${w.amount}* for three fruits that don't match. a salad would have been cheaper.`,
   ],
   pair: [
-    (w) => `a pair. ${w.user} gets *${w.win}* back, along with the dangerous idea that this works.`,
-    (w) => `${w.user} doubles up to *${w.win}*. the house calls this customer retention.`,
+    (w) => `a pair. ${w.user} is *${w.up}* up, along with the dangerous idea that this works.`,
+    (w) => `${w.user} doubles their *${w.amount}*. the house calls this customer retention.`,
   ],
   triple: [
-    (w) => `three of a kind. ${w.user} takes *${w.win}*. somebody check that machine.`,
-    (w) => `${w.user} wins *${w.win}*. it will all be gone by friday.`,
+    (w) => `three of a kind. ${w.user} is *${w.up}* up. somebody check that machine.`,
+    (w) => `${w.user} wins *${w.up}* (${w.win} back). it will all be gone by friday.`,
   ],
   jackpot: [
-    (w) => `JACKPOT. ${w.user} takes *${w.win}* and will be insufferable for at least a week.`,
-    (w) => `${w.user} hit the jackpot for *${w.win}*. the house would like to file a complaint.`,
+    (w) => `JACKPOT. ${w.user} is *${w.up}* up and will be insufferable for at least a week.`,
+    (w) => `${w.user} hit the jackpot and is *${w.up}* up. the house would like to file a complaint.`,
   ],
 }
 
@@ -243,16 +243,16 @@ const TICKETS: Line[] = [
 ]
 
 const DRAWN: Line[] = [
-  (w) => `lottery draw: ${w.winner} wins *${w.pot}* holding ${w.share} of the tickets. everyone else, thank you for your donation.`,
-  (w) => `the lottery pot of *${w.pot}* goes to ${w.winner}. the rest of you paid for that. see you tomorrow.`,
+  (w) => `lottery draw: ${w.winner} wins the *${w.pot}* pot, ${w.own} of it their own tickets. everyone else, thank you for your donation.`,
+  (w) => `the lottery pot of *${w.pot}* goes to ${w.winner}, who put ${w.own} of it in. the rest of you paid for that. see you tomorrow.`,
 ]
 
 export const ticketLine = (rand: Rand, words: Record<string, string>) => `:tickets: ${say(rand, TICKETS, words)}`
 export const drawLine = (rand: Rand, words: Record<string, string>) => `:tada: ${say(rand, DRAWN, words)}`
 
 const ROULETTE_WON: Line[] = [
-  (w) => `${w.user} had *${w.amount}* on ${w.pocket} and it came in. *${w.win}* back. the wheel has made a mistake.`,
-  (w) => `${w.pocket} it is. ${w.user} takes *${w.win}* and will now believe they have a system.`,
+  (w) => `${w.user} had *${w.amount}* on ${w.pocket} and it came in: *${w.up}* up. the wheel has made a mistake.`,
+  (w) => `${w.pocket} it is. ${w.user} takes *${w.up}* off the house and will now believe they have a system.`,
 ]
 
 const ROULETTE_LOST: Line[] = [
@@ -267,14 +267,14 @@ export function rouletteLine(rand: Rand, result: { landed: number; colour: strin
 
 const HAND_OVER: Record<Outcome, Line[]> = {
   blackjack: [
-    (w) => `blackjack. ${w.user} takes *${w.win}* without having to make a single decision, which is when they do best.`,
-    (w) => `${w.user} was dealt 21 and collects *${w.win}*. skill had nothing to do with it.`,
+    (w) => `blackjack. ${w.user} takes *${w.up}* off the house without having to make a single decision, which is when they do best.`,
+    (w) => `${w.user} was dealt 21 and is *${w.up}* up. skill had nothing to do with it.`,
   ],
   win: [
-    (w) => `${w.user} beats the dealer and takes *${w.win}*. the dealer is a random number generator, but well done.`,
-    (w) => `${w.user} wins *${w.win}*. somewhere a casino executive shrugs.`,
+    (w) => `${w.user} beats the dealer and takes *${w.up}*. the dealer is a random number generator, but well done.`,
+    (w) => `${w.user} wins *${w.up}* (${w.win} back). somewhere a casino executive shrugs.`,
   ],
-  push: [(w) => `a push. ${w.user} gets *${w.win}* back and has wasted everyone's time.`],
+  push: [(w) => `a push. ${w.user} gets their *${w.amount}* back and has wasted everyone's time.`],
   lose: [
     (w) => `the dealer wins. ${w.user} loses *${w.amount}* to a deck of cards that doesn't exist.`,
     (w) => `${w.user} stood, hopefully, and lost *${w.amount}*. hope is not a card.`,
@@ -289,8 +289,8 @@ export const handLine = (rand: Rand, outcome: Outcome, words: Record<string, str
 
 const HEIST: Record<"won" | "lost", Line[]> = {
   won: [
-    (w) => `:moneybag: the crew got away with it. ${w.crew} ${w.walk} out with *${w.win}* each. the house is reviewing its security, and its life choices.`,
-    (w) => `:moneybag: ${w.crew} robbed the house and took *${w.win}* each. nobody saw anything. everybody saw everything.`,
+    (w) => `:moneybag: the crew got away with it. ${w.crew} ${w.walk} out *${w.up}* up each. the house is reviewing its security, and its life choices.`,
+    (w) => `:moneybag: ${w.crew} robbed the house and took *${w.up}* each. nobody saw anything. everybody saw everything.`,
   ],
   lost: [
     (w) => `:rotating_light: the heist failed. ${w.crew} lost *${w.amount}* each and ${w.was} last seen waving at the security camera.`,
