@@ -3,6 +3,7 @@ import {
   CENTS,
   defaultConfig,
   EMOJI_NAME,
+  HOUSE,
   type Account,
   type Admin,
   type CasinoStats,
@@ -20,7 +21,7 @@ import {
 } from "../shared/types"
 import { announceRate, bonded, bondHelp, bonds } from "./bonds"
 import { casinoHelp, economy, play, settle, setup } from "./casino"
-import { historyLine, schedule, type Ledger, type Message } from "./ledger"
+import { historyLine, playedLine, schedule, type Ledger, type Message } from "./ledger"
 import type { Env } from "./env"
 import { market, marketHelp, marketStats, portfolio, setupMarket } from "./market"
 import { convertToCents, inCents, money as currency } from "./money"
@@ -1086,11 +1087,13 @@ export class Workspace extends DurableObject<Env> {
     }
 
     if (sub === "history") {
+      // One more than is shown, so the last payout on the list can still find its stake.
       const rows = this.sql
-        .exec<EntryRow>("select * from entries where from_id = ?1 or to_id = ?1 order by id desc limit 10", params.user_id)
+        .exec<EntryRow>("select * from entries where from_id = ?1 or to_id = ?1 order by id desc limit 11", params.user_id)
         .toArray()
       if (!rows.length) return reply("nothing yet")
-      const lines = rows.map((row) => {
+      const bare = (cents: number) => currency(config, cents).split(" ")[0]!
+      const line = (row: EntryRow) => {
         const amount = currency(config, row.amount)
         const note = row.note ? ` · ${escape(row.note)}` : ""
         const game = historyLine(row, params.user_id, amount)
@@ -1099,7 +1102,25 @@ export class Workspace extends DurableObject<Env> {
         if (row.kind === "adjust") return row.to_id === params.user_id ? `+${amount} from an admin${note}` : `-${amount} by an admin${note}`
         if (row.kind === "refund") return row.to_id === params.user_id ? `+${amount} refunded by <@${row.from_id}>` : `-${amount} refunded to <@${row.to_id}>`
         return row.from_id === params.user_id ? `-${amount} to <@${row.to_id}>${note}` : `+${amount} from <@${row.from_id}>${note}`
-      })
+      }
+      const lines: string[] = []
+      for (let i = 0; i < rows.length && lines.length < 10; i++) {
+        const row = rows[i]!
+        // A win against the house is the stake going in and a payout right after it, and reads as one line.
+        const stake = rows[i + 1]
+        if (
+          row.kind === "payout" &&
+          row.from_id === HOUSE &&
+          stake?.kind === "bet" &&
+          stake.to_id === HOUSE &&
+          stake.from_id === params.user_id &&
+          stake.note === row.note
+        ) {
+          const ahead = row.amount - stake.amount
+          lines.push(playedLine(row.note ?? "the casino", bare(stake.amount), bare(row.amount), currency(config, Math.abs(ahead)), ahead))
+          i++
+        } else lines.push(line(row))
+      }
       return reply(`*your recent activity*\n${lines.join("\n")}`)
     }
 

@@ -452,7 +452,9 @@ function describe(entry: Entry, history: History, viewer: string | null) {
       return `${name(entry.from)} staked on ${entry.note === "lottery" ? "lottery tickets" : (entry.note ?? "a bet")}`
     case "payout":
       if (entry.note === "pool refund") return `${name(entry.to)} got a stake back from an office bet`
-      return `${name(entry.to)} won at ${entry.note === "lottery" ? "the lottery" : (entry.note ?? "the casino")}`
+      if (entry.note === "lottery") return `${name(entry.to)} won the lottery`
+      // Not "won": a payout includes the stake, which is listed just before it.
+      return `${entry.note ?? "the casino"} paid ${name(entry.to)}`
     case "duel":
       return `${name(entry.to)} beat ${name(entry.from)} in a duel`
     case "sweep":

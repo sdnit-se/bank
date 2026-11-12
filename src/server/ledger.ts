@@ -49,6 +49,14 @@ export async function schedule(ledger: Ledger) {
   if ((await ledger.storage.getAlarm()) !== next) await ledger.storage.setAlarm(next)
 }
 
+/**
+ * A bet against the house and what it paid, as one line in `/bank history`: what they came out with first, since the
+ * payout hands the stake back along with the winnings and "won 50" on a bet of 25 reads as 50 up.
+ */
+export function playedLine(game: string, stake: string, paid: string, net: string, ahead: number) {
+  return `${ahead > 0 ? "+" : ahead < 0 ? "-" : ""}${net} at ${game}: bet ${stake}, got ${paid} back`
+}
+
 /** How one of this fork's entries reads in `/bank history`, or null when the entry is one of upstream's. */
 export function historyLine(row: { kind: string; from_id: string | null; to_id: string | null; note: string | null }, user: string, amount: string) {
   switch (row.kind) {
@@ -56,7 +64,9 @@ export function historyLine(row: { kind: string; from_id: string | null; to_id: 
       return `-${amount} on ${row.note === "lottery" ? "lottery tickets" : (row.note ?? "a bet")}`
     case "payout":
       if (row.note === "pool refund") return `+${amount} back from an office bet that was called off`
-      return `+${amount} won at ${row.note === "lottery" ? "the lottery" : (row.note ?? "the casino")}`
+      if (row.note === "lottery") return `+${amount} won at the lottery`
+      // A payout includes the stake, so it isn't all winnings. `playedLine` says what they came out with when the stake is at hand.
+      return `+${amount} paid out at ${row.note ?? "the casino"}`
     case "duel":
       return row.from_id === user ? `-${amount} lost a duel to <@${row.to_id}>` : `+${amount} won a duel against <@${row.from_id}>`
     case "stimulus":
