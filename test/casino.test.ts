@@ -379,7 +379,8 @@ test("connect four and rock paper scissors hold both stakes and pay them to whoe
     await click(first, "match_move_0", `${id}:0`)
     await click(second, "match_move_1", `${id}:1`)
   }
-  expect((await click(first, "match_move_0", `${id}:0`)).text).toContain("takes *10 coins*")
+  // Which line it gets is random, but every one of them names the stake.
+  expect((await click(first, "match_move_0", `${id}:0`)).text).toContain("*10 coins*")
   expect([w.balance(first), w.balance(second), w.balance(POOLS)]).toEqual([110, 90, 0])
   expect((await click(second, "match_move_1", `${id}:1`)).text).toContain("is over")
 
