@@ -855,9 +855,9 @@ export class Workspace extends DurableObject<Env> {
     return this.raceInCoins(raceFor(this.ledger(), viewer.id))
   }
 
-  startRace(viewer: Viewer) {
+  startRace(viewer: Viewer, words?: number) {
     this.assertActive(viewer)
-    return startRace(this.ledger(), viewer.id)
+    return startRace(this.ledger(), viewer.id, Number(words) || undefined)
   }
 
   finishRace(viewer: Viewer, input: Parameters<typeof finishRace>[2]) {

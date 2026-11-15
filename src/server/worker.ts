@@ -273,7 +273,7 @@ async function api(request: Request, env: Env, path: string) {
   if (route === "GET /history") return ws.history(user, "mine")
   if (route === "GET /people") return ws.people(user)
   if (route === "GET /race") return ws.race(user)
-  if (route === "POST /race") return ws.startRace(user)
+  if (route === "POST /race") return ws.startRace(user, (await body<{ words?: number }>()).words)
   if (route === "POST /race/finish") return ws.finishRace(user, await body<Parameters<typeof ws.finishRace>[1]>())
   if (route === "GET /vault") return ws.vault(user)
   if (route === "POST /vault") return ws.crack(user, (await body<{ word: string }>()).word)

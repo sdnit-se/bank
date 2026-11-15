@@ -12,9 +12,10 @@ import { secureRand } from "./games"
 import type { Ledger } from "./ledger"
 import { COMMON } from "./words"
 
-const WORDS = 25
-/** How long a dealt race waits to be finished. */
-const WAIT = 5 * 60_000
+/** How long a race can be, in words. What it pays is for the shortest, and longer ones pay in proportion. */
+export const LENGTHS = [25, 50, 100]
+/** How long a dealt race waits to be run. The words are dealt as soon as the page opens, so it may be a while. */
+const WAIT = 60 * 60_000
 /** Faster than anyone types: such a time isn't put on the board. */
 const HUMAN = 220
 const DAY = 24 * 60 * 60_000
@@ -27,6 +28,7 @@ export const WAGES = [
 ]
 
 type Row = { id: number; user_id: string; text: string; at: number; wpm: number | null; accuracy: number | null }
+type Placed = Race["board"][number]
 
 export function setupRace(sql: SqlStorage) {
   sql.exec("create table if not exists races (id integer primary key autoincrement, user_id text not null, text text not null, at integer not null, wpm integer, accuracy integer)")
@@ -39,16 +41,22 @@ function earned(ledger: Ledger, user: string) {
 
 /** The board, the viewer's own figures, and what a race pays. */
 export function raceFor(ledger: Ledger, user: string): Race {
-  const board = ledger.sql
-    .exec<{ id: string; name: string; image: string | null; best: number; races: number }>(
-      `select accounts.id, accounts.name, accounts.image, max(wpm) as best, count(*) as races from races join accounts on accounts.id = races.user_id
-       where wpm is not null group by races.user_id order by best desc, races desc limit 10`,
-    )
-    .toArray()
-  const mine = ledger.sql.exec<{ wpm: number }>("select wpm from races where user_id = ? and wpm is not null order by id desc limit 200", user).toArray().map((row) => row.wpm)
+  const board = (since: number) =>
+    ledger.sql
+      .exec<Placed>(
+        `select accounts.id, accounts.name, accounts.image, max(wpm) as best, count(*) as races from races join accounts on accounts.id = races.user_id
+         where wpm is not null and races.at > ? group by races.user_id order by best desc, races desc limit 10`,
+        since,
+      )
+      .toArray()
+  const runs = ledger.sql.exec<Row>("select * from races where user_id = ? and wpm is not null order by id desc limit 200", user).toArray()
+  const mine = runs.map((row) => row.wpm!)
   const recent = mine.slice(0, 10)
   return {
-    board,
+    board: board(0),
+    today: board(nextDraw(Date.now()) - DAY),
+    recent: runs.slice(0, 8).map((row) => ({ wpm: row.wpm!, accuracy: row.accuracy ?? 0, words: row.text.split(" ").length, at: row.at })),
+    lengths: LENGTHS,
     best: mine.length ? Math.max(...mine) : 0,
     average: recent.length ? Math.round(recent.reduce((sum, wpm) => sum + wpm, 0) / recent.length) : 0,
     races: mine.length,
@@ -59,10 +67,10 @@ export function raceFor(ledger: Ledger, user: string): Race {
 }
 
 /** Deals a race: the words to type, and the number to hand them back under. */
-export async function startRace(ledger: Ledger, user: string) {
+export async function startRace(ledger: Ledger, user: string, words = LENGTHS[0]!) {
   const person = (await ledger.ensure([user])).get(user)
   if (!person || person.bot || person.gone) throw new Error("Only members of this workspace get to race.")
-  const text = Array.from({ length: WORDS }, () => COMMON[secureRand(COMMON.length)]!).join(" ")
+  const text = Array.from({ length: LENGTHS.includes(words) ? words : LENGTHS[0]! }, () => COMMON[secureRand(COMMON.length)]!).join(" ")
   // A race that was dealt and never run is nothing worth keeping.
   ledger.sql.exec("delete from races where wpm is null and (user_id = ? or at < ?)", user, Date.now() - WAIT)
   ledger.sql.exec("insert into races (user_id, text, at) values (?, ?, ?)", user, text, Date.now())
@@ -87,7 +95,9 @@ export function finishRace(ledger: Ledger, user: string, input: { id: number; ty
   const before = ledger.sql.exec<{ mine: number | null; office: number | null }>("select (select max(wpm) from races where user_id = ?) as mine, (select max(wpm) from races) as office", user).one()
   ledger.sql.exec("update races set wpm = ?, accuracy = ? where id = ?", wpm, accuracy, row.id)
   const left = Math.max(0, ledger.config().wages - earned(ledger, user))
-  const wage = Math.min((WAGES.find((step) => wpm >= step.from)?.pays ?? 0) * CENTS, left)
+  // Twice the words is twice the work.
+  const lengths = row.text.split(" ").length / LENGTHS[0]!
+  const wage = Math.min(Math.round((WAGES.find((step) => wpm >= step.from)?.pays ?? 0) * lengths * CENTS), left)
   // Made, not moved: nobody is on the other side of this one.
   const paid = wage > 0 && ledger.move({ from: null, to: user, amount: wage, kind: "wage", note: `${wpm} wpm`, actor: user }).ok ? wage : 0
   return { wpm, accuracy, paid, personal: wpm > (before.mine ?? 0), record: wpm > (before.office ?? 0), race: raceFor(ledger, user) }

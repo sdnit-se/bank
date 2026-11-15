@@ -71,6 +71,12 @@ export type Config = {
 /** The typing race as someone sees it: the board, their own figures, and what it pays. */
 export type Race = {
   board: { id: string; name: string; image: string | null; best: number; races: number }[]
+  /** The same board for races run since the morning round. */
+  today: { id: string; name: string; image: string | null; best: number; races: number }[]
+  /** Their own latest races, newest first. */
+  recent: { wpm: number; accuracy: number; words: number; at: number }[]
+  /** How many words a race can be. What it pays is for the first, and longer ones pay in proportion. */
+  lengths: number[]
   best: number
   /** Over their last ten races. */
   average: number

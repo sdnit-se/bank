@@ -450,6 +450,10 @@ test("a typing race pays a wage in new coins by speed, up to the day's limit, an
     return finishRace(w.ledger, A, { id: race.id, typed: race.text, ms: claimed ?? ms, keys: race.text.length })
   }
   expect(await run(85)).toMatchObject({ paid: 3 * CENTS, personal: true, record: true })
+  // Twice the words pays twice the wage.
+  const long = await startRace(w.ledger, A, 50)
+  clock.now += 60_000
+  expect(finishRace(w.ledger, A, { id: long.id, typed: long.text, ms: Math.round((long.text.length / 5 / 85) * 60_000), keys: long.text.length }).paid).toBe(6 * CENTS)
   expect((await run(30)).paid).toBe(0)
   const cheat = await startRace(w.ledger, A)
   expect(() => finishRace(w.ledger, A, { id: cheat.id, typed: "something else", ms: 5000, keys: 14 })).toThrow("isn't what was dealt")
