@@ -3,6 +3,7 @@
 // the bank works; `/bank help` does that. Wording only: no coins move here. A day with nothing to report gets no paper.
 
 import { BONDS, BOUNTIES, CENTRAL, HOUSE, POOLS, POT } from "../shared/types"
+import type { welfare } from "./begging"
 import type { matureBonds } from "./bonds"
 import { say, secureRand, type Line } from "./games"
 import { held, newsroom, section, type Block, type Ledger } from "./ledger"
@@ -18,6 +19,7 @@ export type Round = {
   lottery: { winner: string; pot: number; mine: number; sold: number; tax: number } | null
   wealth: { collected: number; payers: number } | null
   matured: ReturnType<typeof matureBonds>
+  checks: ReturnType<typeof welfare>
   /** Office bets called off for being open too long. */
   expired: string[]
   /** Bounties called off for the same reason. */
@@ -91,6 +93,15 @@ const COPY = {
     () => `The task has officially been ignored long enough to get a budget.`,
   ],
   abandoned: [() => `Thirty days, no takers, coins returned. The task remains, as tasks do.`],
+  checks: [
+    (w) => `Fiscal policy at work. Economists expect ${w.each} to stimulate the blackjack table by about ${w.each}.`,
+    () => `The central bank calls it a safety net. The house calls it a delivery.`,
+    () => `Means-tested, which is a polite way of saying the bank checked and yes, it really is that bad.`,
+  ],
+  unpaid: [
+    () => `The safety net turned out to be mostly hole. The central bank is also broke, which it describes as "solidarity".`,
+    () => `The central bank looked into its reserves, found the same thing they have, and wishes them well.`,
+  ],
   begged: [
     () => `Everyone involved has agreed never to mention it again, which is why it's in the paper.`,
     () => `The donors would like it known that they expect nothing in return, and will be bringing it up for weeks.`,
@@ -192,6 +203,12 @@ export async function publish(ledger: Ledger, round: Round, now = Date.now()) {
     const total = [...thanked.values()].reduce((sum, amount) => sum + amount, 0)
     const [a, b] = mutual[0] ?? []
     story(`${coins(total)} given as thanks`, line(COPY.thanks, { who: at(top[0]), amount: coins(top[1]) }), a && b && line(COPY.mutual, { a: at(a), b: at(b) }))
+  }
+  if (round.checks?.paid.length) {
+    const { paid, each } = round.checks
+    story(`Stimmy checks went out: ${coins(each)} ${paid.length === 1 ? "to" : "each to"} ${names(paid)}`, line(COPY.checks, { each: coins(each) }))
+  } else if (round.checks?.missed) {
+    story(`No stimmy checks: the central bank couldn't cover ${count(round.checks.missed, "person", "people").toLowerCase()}`, line(COPY.unpaid))
   }
   if (begged.size) {
     const total = [...begged.values()].reduce((sum, amount) => sum + amount, 0)

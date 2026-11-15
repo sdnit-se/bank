@@ -4,8 +4,11 @@
 // What is spared is an `alms` entry: a gift, but charity rather than thanks, so it doesn't count towards what
 // colleagues have given someone. Admins set who counts as nearly broke, how long a plea stays open, and how often
 // anyone may beg.
+//
+// Nobody has to ask for the stimmy check: at the morning round the central bank pays everyone nearly broke a few
+// coins out of what it holds, so being at zero is never the end of the game.
 
-import { CENTS } from "../shared/types"
+import { CENTRAL, CENTS } from "../shared/types"
 import { bonded } from "./bonds"
 import { brokeLine, say, secureRand, type Line } from "./games"
 import { button, inPlace, loud, quiet, tooFast, withButtons, type Ledger, type Message } from "./ledger"
@@ -33,6 +36,30 @@ export function setupBegging(sql: SqlStorage) {
     create table if not exists pleas (id integer primary key autoincrement, user_id text not null, target integer not null, raised integer not null default 0, reason text not null default '', channel text, at integer not null, closed integer not null default 0);
     create table if not exists plea_gifts (plea integer not null, user_id text not null, amount integer not null, primary key (plea, user_id));
   `)
+}
+
+/** What someone has to their name: coins in bonds or in shares still count, so they aren't broke, just illiquid. */
+function worth(ledger: Ledger, user: string, balance: number) {
+  const shares = ledger.sql.exec<{ n: number | null }>("select sum(cost) as n from positions where user_id = ?", user).one().n ?? 0
+  return balance + bonded(ledger, user) + shares
+}
+
+/**
+ * The stimmy check, paid in the daily round: everyone nearly broke gets the same from the central bank, poorest
+ * first, for as long as its reserves last. Nothing is printed for it, so an empty bank pays nobody.
+ */
+export function welfare(ledger: Ledger) {
+  const rules = ledger.config().begging
+  if (!(rules.welfare > 0)) return null
+  const broke = ledger.sql
+    .exec<{ id: string; balance: number }>("select id, balance from accounts where bot = 0 and gone = 0 and balance < ? order by id", rules.below)
+    .toArray()
+    .map((row) => ({ id: row.id, worth: worth(ledger, row.id, row.balance) }))
+    .filter((row) => row.worth < rules.below)
+    .sort((a, b) => a.worth - b.worth)
+  if (!broke.length) return null
+  const paid = broke.filter((person) => ledger.move({ from: CENTRAL, to: person.id, amount: rules.welfare, kind: "stimulus", note: "stimmy check" }).ok).map((person) => person.id)
+  return { paid, missed: broke.length - paid.length, each: rules.welfare }
 }
 
 const find = (ledger: Ledger, id: number) => ledger.sql.exec<Plea>("select * from pleas where id = ?", id).toArray()[0] ?? null
@@ -66,8 +93,7 @@ export async function beg(ledger: Ledger, input: { sub: string; words: string[];
   if (rules.perDay <= 0) return quiet("begging is switched off here. you'll have to earn it, or win it.")
   const row = (await ledger.ensure([input.user])).get(input.user)
   if (!row || row.gone) return quiet("only members of this workspace get to beg here.")
-  // Coins locked in a bond still count: someone with a hundred in bonds isn't broke, just illiquid.
-  const holds = row.balance + bonded(ledger, input.user)
+  const holds = worth(ledger, input.user, row.balance)
   if (holds >= rules.below) return quiet(`you hold ${coins(holds)}. begging is for people under ${coins(rules.below)}, and you're not poor enough yet. the casino can fix that.`)
   const mine = ledger.sql.exec<Plea>("select * from pleas where user_id = ? order by id desc limit 1", input.user).toArray()[0]
   if (mine && open(ledger, mine)) return quiet("you're already begging. give them a minute, they're looking for change.")
@@ -104,13 +130,15 @@ export async function begClick(ledger: Ledger, input: { user: string; action: st
   if (!ledger.move({ from: input.user, to: plea.user_id, amount: spare, kind: "alms", note: plea.reason || null, actor: input.user }).ok) return quiet("something went wrong, try again")
   ledger.sql.exec("update pleas set raised = raised + ?, closed = case when raised + ? >= target then 1 else 0 end where id = ?", spare, spare, plea.id)
   ledger.sql.exec("insert into plea_gifts (plea, user_id, amount) values (?, ?, ?) on conflict (plea, user_id) do update set amount = amount + excluded.amount", plea.id, input.user, spare)
-  const holds = (ledger.row(plea.user_id)?.balance ?? 0) + bonded(ledger, plea.user_id)
+  const holds = worth(ledger, plea.user_id, ledger.row(plea.user_id)?.balance ?? 0)
   return inPlace(card(ledger, find(ledger, plea.id)!, holds))
 }
 
 /** The begging part of `/bank help`: nothing while it's switched off. */
 export function begHelp(ledger: Ledger) {
-  const rules = ledger.config().begging
-  if (rules.perDay <= 0) return []
-  return [`*begging* · \`/bank beg 5 for coffee\` · for anyone holding under ${money(ledger.config(), rules.below)}. colleagues spare a coin or five from the buttons`]
+  const config = ledger.config()
+  const rules = config.begging
+  const check = rules.welfare > 0 ? [`*stimmy check* · ${money(config, rules.welfare)} from the central bank at the morning draw, for anyone holding under ${money(config, rules.below)}, while it has any`] : []
+  if (rules.perDay <= 0) return check
+  return [`*begging* · \`/bank beg 5 for coffee\` · for anyone holding under ${money(config, rules.below)}. colleagues spare a coin or five from the buttons`, ...check]
 }

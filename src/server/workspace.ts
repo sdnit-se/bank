@@ -880,6 +880,8 @@ export class Workspace extends DurableObject<Env> {
         below: whole((input.begging ?? this.settings().begging).below, 0),
         minutes: Math.min(whole((input.begging ?? this.settings().begging).minutes, 1), 24 * 60),
         perDay: Math.min(whole((input.begging ?? this.settings().begging).perDay, 0), 24),
+        // A client from before the stimmy check sends none, and shouldn't switch it off by saving.
+        welfare: whole(input.begging?.welfare ?? this.settings().begging.welfare, 0),
       },
     }
     // Bank can only post where it is a member.

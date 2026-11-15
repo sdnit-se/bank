@@ -340,6 +340,26 @@ test("only the nearly broke can beg, and what is spared reaches them without cou
   expect(w.total()).toBe(300)
 })
 
+test("the morning stimmy check pays the nearly broke from the central bank, poorest first, and prints nothing", async () => {
+  const w = world()
+  w.join(C)
+  w.give(A, C, 100)
+  w.give(B, C, 93)
+  w.print(CENTRAL, 8)
+  const before = w.total()
+  // Eight coins cover one check of five: A, who has nothing, comes before B, who has seven. The house, which is
+  // short of its reserve, only gets what is left.
+  await settle(w.ledger)
+  expect([w.balance(A), w.balance(B), w.balance(HOUSE)]).toEqual([5, 7, 3])
+  w.print(CENTRAL, 100)
+  await settle(w.ledger)
+  expect([w.balance(A), w.balance(B)]).toEqual([10, 12])
+  // Neither is under ten any more, and C never was.
+  await settle(w.ledger)
+  expect([w.balance(A), w.balance(B), w.balance(C)]).toEqual([10, 12, 293])
+  expect(w.total()).toBe(before + 100)
+})
+
 test("an office bet pays the whole pot to the side that was right, and gives stakes back when nobody was", async () => {
   const w = world()
   w.join(C)

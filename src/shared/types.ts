@@ -64,12 +64,17 @@ export type Config = {
   begging: Begging
 }
 
-/** Who may beg and for how long. Only someone holding less than `below` may; `perDay` of zero stops begging. */
+/**
+ * Who counts as nearly broke, and what there is for them. Only someone holding less than `below` may beg, and
+ * `perDay` of zero stops begging.
+ */
 export type Begging = {
   below: number
   /** How long a plea stays open, in minutes. */
   minutes: number
   perDay: number
+  /** The stimmy check: coins the central bank pays each of them at the morning round, while it has any. Zero is off. */
+  welfare: number
 }
 
 export const defaultConfig: Config = {
@@ -88,7 +93,7 @@ export const defaultConfig: Config = {
   market: { enabled: false, fee: 1 },
   taxes: { transfer: 0, winnings: 0, wealth: 0, wealthAbove: 200, interest: 0 },
   channel: "",
-  begging: { below: 10, minutes: 60, perDay: 1 },
+  begging: { below: 10, minutes: 60, perDay: 1, welfare: 5 },
 }
 
 /**

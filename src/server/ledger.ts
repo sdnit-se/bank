@@ -53,7 +53,7 @@ export const WAITS = 10 * 60_000
 export async function schedule(ledger: Ledger) {
   const now = Date.now()
   const config = ledger.config()
-  const daily = config.games.enabled || config.taxes.wealth > 0 || held(ledger, BONDS) > 0 ? nextDraw(now) : null
+  const daily = config.games.enabled || config.taxes.wealth > 0 || config.begging.welfare > 0 || held(ledger, BONDS) > 0 ? nextDraw(now) : null
   const heist = ledger.sql.exec<{ at: number | null }>("select min(at) as at from heists").one().at
   const release = ledger.sql.exec<{ at: number | null }>("select min(until) as at from arrests where until > ?", now).one().at
   const due = [daily, heist === null ? null : heist + WAITS, release].filter((at): at is number => at !== null)
@@ -84,6 +84,7 @@ export function historyLine(row: { kind: string; from_id: string | null; to_id: 
     case "duel":
       return row.from_id === user ? `-${amount} lost a duel to <@${row.to_id}>` : `+${amount} won a duel against <@${row.from_id}>`
     case "stimulus":
+      if (row.note === "stimmy check") return `+${amount} stimmy check from the central bank`
       return `+${amount} from the central bank${row.note === "bond interest" ? ", interest on a bond" : ""}`
     case "buy":
       return `-${amount} into ${row.note ?? "the market"}`

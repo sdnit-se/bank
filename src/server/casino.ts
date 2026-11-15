@@ -9,6 +9,7 @@
 
 import { BONDS, BOUNTIES, CENTRAL, CENTS, HOUSE, INSTITUTIONS, MARKET, nextDraw, POOLS, POT, toCents, type Config, type Economy } from "../shared/types"
 import { matureBonds } from "./bonds"
+import { welfare } from "./begging"
 import { expireBounties } from "./bounties"
 import {
   BLACKJACK_TOP,
@@ -323,7 +324,7 @@ export async function play(ledger: Ledger, input: { sub: string; words: string[]
 
 /**
  * The daily round, run from the Workspace's alarm: collects the wealth tax when a week is up, settles the house
- * against its reserve, pays back bonds, calls off office bets nobody settled, draws the lottery if anyone holds a
+ * against its reserve, pays the nearly broke their stimmy check, pays back bonds, calls off office bets nobody settled, draws the lottery if anyone holds a
  * ticket, and hands out titles. What came of it goes out as the morning paper. It comes back the next day by itself
  * for as long as there is anything to come back for.
  */
@@ -334,9 +335,10 @@ export async function settle(ledger: Ledger) {
   const reserve = config.games.reserve
   // What is staked on hands still being played isn't the house's yet.
   const house = held(ledger, HOUSE) - owed(ledger)
-  if (house > reserve) {
-    ledger.move({ from: HOUSE, to: CENTRAL, amount: house - reserve, kind: "sweep", note: "house winnings" })
-  } else if (house < reserve) {
+  if (house > reserve) ledger.move({ from: HOUSE, to: CENTRAL, amount: house - reserve, kind: "sweep", note: "house winnings" })
+  // The broke come first: before the house is refilled, bond interest is paid and the lottery gets its share.
+  const checks = welfare(ledger)
+  if (house < reserve) {
     const refill = Math.min(reserve - house, held(ledger, CENTRAL))
     if (refill > 0) ledger.move({ from: CENTRAL, to: HOUSE, amount: refill, kind: "stimulus", note: "house reserve" })
   }
@@ -360,7 +362,7 @@ export async function settle(ledger: Ledger) {
     lottery = { winner, pot, mine, sold: tickets.reduce((sum, ticket) => sum + ticket.count, 0), tax }
   }
 
-  const posted = await publish(ledger, { wealth, matured, expired, abandoned, lottery, honours: award(ledger) })
+  const posted = await publish(ledger, { wealth, matured, checks, expired, abandoned, lottery, honours: award(ledger) })
   // Bank can't post where it isn't a member, so a winner the paper didn't reach is told directly.
   if (lottery && !posted) {
     const text = drawLine(secureRand, { winner: `<@${lottery.winner}>`, pot: currency(config, lottery.pot), share: `${lottery.mine} of ${lottery.sold}`, own: currency(config, lottery.mine * CENTS) }) + taxed(config, lottery.tax)

@@ -93,7 +93,10 @@ function page(ledger: Ledger) {
     [
       rate > 0 ? `Bonds pay **${rate}% a week** (\`/bank bond 50\`).` : "No bonds on sale.",
       `It holds ${coins(held(ledger, CENTRAL))} and the house ${coins(held(ledger, HOUSE))}. Another ${coins(held(ledger, BOUNTIES))} sits on the bounty board.`,
-    ].join(" "),
+      config.begging.welfare > 0 && `Anyone holding under ${coins(config.begging.below)} gets a stimmy check of ${coins(config.begging.welfare)} at 09:00, while it has any.`,
+    ]
+      .filter(Boolean)
+      .join(" "),
   )
 
   const forSale = shopFor(ledger).listings.filter((item) => item.stock !== 0)

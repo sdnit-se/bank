@@ -465,7 +465,7 @@ function describe(entry: Entry, history: History, viewer: string | null) {
     case "sweep":
       return "the house paid its winnings to the central bank"
     case "stimulus":
-      return `the central bank paid ${name(entry.to)}`
+      return `the central bank paid ${name(entry.to)}${entry.note === "stimmy check" ? " a stimmy check" : ""}`
     case "buy":
       return `${name(entry.from)} bought ${entry.note ?? "shares"}`
     case "sell":
@@ -1268,10 +1268,14 @@ function SettingsPanel(props: { me: Me; changed: () => void }) {
           </Numbers>
         </Show>
 
-        <Numbers title="Begging" note="Anyone holding less than this can /bank beg, as many times a day as allowed, and each plea stays open this long. 0 pleas a day switches begging off.">
+        <Numbers
+          title="The nearly broke"
+          note="Anyone holding less than this can /bank beg, as many times a day as allowed, and each plea stays open this long. At the morning draw the central bank also pays each of them a stimmy check, while it has the coins. 0 switches either off."
+        >
           <NumberField label="Under, coins" value={draft.begging.below} set={(value) => setDraft("begging", "below", value)} />
           <NumberField label="Open, minutes" value={draft.begging.minutes} set={(value) => setDraft("begging", "minutes", value)} />
           <NumberField label="Pleas a day" value={draft.begging.perDay} set={(value) => setDraft("begging", "perDay", value)} />
+          <NumberField label="Stimmy check, coins" value={draft.begging.welfare} set={(value) => setDraft("begging", "welfare", value)} />
         </Numbers>
 
         <div class="setting">
