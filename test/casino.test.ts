@@ -7,6 +7,7 @@ import type { Message } from "../src/server/ledger"
 import { bounties, bountyClick } from "../src/server/bounties"
 import { shop, shopClick, stock, unstock } from "../src/server/shop"
 import { beg, begClick } from "../src/server/begging"
+import { matchClick } from "../src/server/matches"
 import { sources } from "../src/server/stats"
 import { heistsDue, interact } from "../src/server/tables"
 import { BOUNTIES, CENTRAL, CENTS, HOUSE, nextDraw, POOLS, POT } from "../src/shared/types"
@@ -319,7 +320,7 @@ test("only the nearly broke can beg, and what is spared reaches them without cou
   const w = world()
   w.join(C)
   const ask = (user: string, text: string) => beg(w.ledger, { sub: "beg", words: text.split(" ").filter(Boolean), user, channel: "C1" })
-  const spare = (user: string, value: string) => begClick(w.ledger, { user, action: "beg_spare", value })
+  const spare = (user: string, value: string) => begClick(w.ledger, { user, action: `beg_spare_${value.split(":")[1]}`, value })
   expect((await ask(A, "5 for coffee"))!.text).toContain("not poor enough")
   w.ledger.move({ from: A, to: B, amount: 95 * CENTS, kind: "give" })
   expect((await ask(A, "50"))!.text).toContain("10 coins at most")
@@ -358,6 +359,49 @@ test("the morning stimmy check pays the nearly broke from the central bank, poor
   await settle(w.ledger)
   expect([w.balance(A), w.balance(B), w.balance(C)]).toEqual([10, 12, 293])
   expect(w.total()).toBe(before + 100)
+})
+
+test("connect four and rock paper scissors hold both stakes and pay them to whoever wins, on the board or on time", async () => {
+  const w = world()
+  w.join(C)
+  const click = async (user: string, action: string, value: string) => (await matchClick(w.ledger, { user, action, value }))!
+  const id = button(await w.say(A, "connect <@UBBB> 10"))
+  expect((await click(C, "match_accept", id)).text).toContain("isn't yours")
+  expect([w.balance(A), w.balance(B)]).toEqual([100, 100])
+  const board = await click(B, "match_accept", id)
+  expect([w.balance(A), w.balance(B), w.balance(POOLS)]).toEqual([90, 90, 20])
+  // Who starts is a coin flip, and the board says who it was.
+  const first = board.text.match(/<@(\w+)> to move/)![1]!
+  const second = first === A ? B : A
+  expect((await click(second, "match_move_0", `${id}:0`)).text).toContain("not your turn")
+  for (let turn = 0; turn < 3; turn++) {
+    await click(first, "match_move_0", `${id}:0`)
+    await click(second, "match_move_1", `${id}:1`)
+  }
+  expect((await click(first, "match_move_0", `${id}:0`)).text).toContain("takes *10 coins*")
+  expect([w.balance(first), w.balance(second), w.balance(POOLS)]).toEqual([110, 90, 0])
+  expect((await click(second, "match_move_1", `${id}:1`)).text).toContain("is over")
+
+  // Best of three, and nobody sees a pick before both are in.
+  const rps = button(await w.say(B, "rps <@UAAA> 10"))
+  await click(A, "match_accept", rps)
+  expect((await click(A, "match_pick_rock", `${rps}:rock`)).text).not.toContain(":rock:")
+  expect((await click(B, "match_pick_rock", `${rps}:rock`)).text).toContain("again")
+  await click(A, "match_pick_paper", `${rps}:paper`)
+  await click(B, "match_pick_rock", `${rps}:rock`)
+  await click(B, "match_pick_scissors", `${rps}:scissors`)
+  const before = [w.balance(A), w.balance(B)]
+  expect((await click(A, "match_pick_rock", `${rps}:rock`)).text).toContain("2–0")
+  expect([w.balance(A), w.balance(B)]).toEqual([before[0]! + 20, before[1]!])
+
+  // Ten minutes without a move and the one left waiting takes it, by clicking or at the daily round.
+  const slow = button(await w.say(C, "rps <@UAAA> 10"))
+  await click(A, "match_accept", slow)
+  await click(C, "match_pick_rock", `${slow}:rock`)
+  clock.now += 11 * 60_000
+  await settle(w.ledger)
+  expect([w.balance(C), w.balance(POOLS)]).toEqual([110, 0])
+  expect(w.total()).toBe(300)
 })
 
 test("an office bet pays the whole pot to the side that was right, and gives stakes back when nobody was", async () => {

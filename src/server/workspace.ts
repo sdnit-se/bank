@@ -33,6 +33,7 @@ import { bounties, bountyClick, bountyHelp } from "./bounties"
 import { refreshFrontPage } from "./canvas"
 import { publishHome } from "./home"
 import { beg, begClick, begHelp, setupBegging } from "./begging"
+import { matchClick } from "./matches"
 import { buy, setupShop, shop, shopClick, shopFor, shopHelp, stock, unstock } from "./shop"
 import { heistsDue, interact } from "./tables"
 import { titles, titlesOf } from "./titles"
@@ -230,7 +231,7 @@ export class Workspace extends DurableObject<Env> {
   /** A click on a button under one of Bank's messages. */
   async interaction(input: { user: string; action: string; value: string }): Promise<SlackMessage> {
     const [ledger, before] = [this.ledger(), this.lastEntry()]
-    return this.changed((await shopClick(ledger, input)) ?? (await bountyClick(ledger, input)) ?? (await begClick(ledger, input)) ?? (await interact(ledger, input)), before)
+    return this.changed((await shopClick(ledger, input)) ?? (await bountyClick(ledger, input)) ?? (await begClick(ledger, input)) ?? (await matchClick(ledger, input)) ?? (await interact(ledger, input)), before)
   }
 
   /** The daily round. */

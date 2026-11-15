@@ -81,7 +81,7 @@ function card(ledger: Ledger, plea: Plea, holds: number): Message {
   const closes = Math.floor((plea.at + config.begging.minutes * 60_000) / 1000)
   const so = plea.raised ? `${coins(plea.raised)} of ${coins(plea.target)} so far, from ${given.join(", ")}.` : "nothing yet."
   const text = `:pleading_face: ${say(secureRand, ASKING, words)}\n${so} open until <!date^${closes}^{time}|in an hour>.`
-  return withButtons(loud(text), SPARE.map((amount, index) => button(`Spare ${coins(amount * CENTS)}`, "beg_spare", `${plea.id}:${amount}`, index ? undefined : "primary")))
+  return withButtons(loud(text), SPARE.map((amount, index) => button(`Spare ${coins(amount * CENTS)}`, `beg_spare_${amount}`, `${plea.id}:${amount}`, index ? undefined : "primary")))
 }
 
 /** Answers `/bank beg`, or returns null when the words aren't about begging. */
@@ -116,7 +116,8 @@ export async function beg(ledger: Ledger, input: { sub: string; words: string[];
 
 /** A click on Spare: the coins go straight to the beggar, never past what they asked for. Null when the click isn't one. */
 export async function begClick(ledger: Ledger, input: { user: string; action: string; value: string }): Promise<Message | null> {
-  if (input.action !== "beg_spare") return null
+  // Slack wants every button in a row to have its own id, so the amount is in it as well as in the value.
+  if (!input.action.startsWith("beg_spare")) return null
   const config = ledger.config()
   const [id, amount] = input.value.split(":").map(Number)
   const plea = find(ledger, id ?? 0)

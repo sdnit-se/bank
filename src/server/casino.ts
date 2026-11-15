@@ -10,6 +10,7 @@
 import { BONDS, BOUNTIES, CENTRAL, CENTS, HOUSE, INSTITUTIONS, MARKET, nextDraw, POOLS, POT, toCents, type Config, type Economy } from "../shared/types"
 import { matureBonds } from "./bonds"
 import { welfare } from "./begging"
+import { matchesDue, offerMatch, type MatchGame } from "./matches"
 import { expireBounties } from "./bounties"
 import {
   BLACKJACK_TOP,
@@ -57,6 +58,7 @@ export function setup(sql: SqlStorage) {
       at integer not null
     );
     create table if not exists tickets (id text primary key, count integer not null);
+    create table if not exists matches (id integer primary key autoincrement, game text not null, a text not null, b text not null, stake integer not null, state text not null default '', channel text, started integer not null default 0, moved integer not null);
     create table if not exists hands (user_id text primary key, stake integer not null, player text not null, dealer text not null, at integer not null);
     create table if not exists bonds (id integer primary key autoincrement, user_id text not null, amount integer not null, rate real not null, matures integer not null);
     create table if not exists heists (id integer primary key autoincrement, by_id text not null, stake integer not null, crew text not null, at integer not null);
@@ -93,6 +95,8 @@ export function casinoHelp(config: Config) {
     `\`/bank roulette 10 red\` · red, black, odd or even doubles it. a number from 0 to 36 pays 36 times`,
     `\`/bank blackjack 10\` · beat the dealer to 21, then \`/bank hit\`, \`/bank stand\`, or \`/bank double\` on your first two cards. walk away for ten minutes and the house keeps it`,
     `\`/bank duel @someone 10\` · a coin flip between you. they \`/bank accept\` or \`/bank decline\`. leave the name out and anyone can take it`,
+    `\`/bank connect @someone 10\` · connect four for both stakes, played from the buttons. no luck in it. ten minutes without a move loses on time`,
+    `\`/bank rps @someone 10\` · rock paper scissors, best of three, picked in secret`,
     `\`/bank heist 10\` · get a crew of up to ${HEIST_CREW} together to rob the house. ${HEIST_PAYS} times your stake if it works, and a bigger crew has better odds${config.games.jail ? `. a caught crew does ${config.games.jail} minutes, or pays its stake in \`/bank bail\`` : ""}`,
     `\`/bank pool will the demo work?\` · an office bet. people pick yes or no, and whoever called it splits the pot. \`/bank pools\` lists them`,
     `\`/bank lottery 5\` · five tickets for the daily draw. the next one is ${drawTime()}`,
@@ -217,6 +221,19 @@ const duel: Game = async (bet) => {
   return offerDuel(bet.ledger, { from: bet.user, to, amount: bet.amount })
 }
 
+/** A challenge at connect four or rock paper scissors. Nothing is staked until it's accepted. */
+const match =
+  (game: MatchGame): Game =>
+  async (bet) => {
+    const to = bet.words.find((word) => MENTION.test(word))?.match(MENTION)![1] ?? null
+    if (to === bet.user) return quiet("you can't play yourself. you'd still find a way to lose.")
+    const problem = await refuse(bet, `say how much, and who if you have someone in mind: \`/bank ${game} @someone 10\`, or \`/bank ${game} 10\` for anyone`)
+    if (problem) return quiet(problem)
+    const opponent = to ? (await bet.ledger.ensure([to])).get(to) : null
+    if (to && (!opponent || opponent.bot || opponent.gone)) return quiet("they can't play. pick on someone who exists.")
+    return offerMatch(bet.ledger, { game, from: bet.user, to, amount: bet.amount, channel: bet.channel })
+  }
+
 const heist: Game = async (bet) => {
   const word = bet.words[0]?.toLowerCase()
   const problem = word === "join" || word === "go" ? null : ((await refuse(bet, "say what each of the crew puts in: `/bank heist 10`")) ?? tooRich(bet, HEIST_PAYS))
@@ -289,6 +306,9 @@ const GAMES = new Map<string, Game>([
   ["duel", duel],
   ["accept", (bet) => answerDuel(bet.ledger, bet.user, true)],
   ["decline", (bet) => answerDuel(bet.ledger, bet.user, false)],
+  ["connect", match("connect")],
+  ["connect4", match("connect")],
+  ["rps", match("rps")],
   ["heist", heist],
   ["bail", bail],
   ["pool", (bet) => pool(bet.ledger, bet)],
@@ -344,6 +364,7 @@ export async function settle(ledger: Ledger) {
   }
 
   const matured = matureBonds(ledger)
+  await matchesDue(ledger)
   const expired = expirePools(ledger)
   const abandoned = expireBounties(ledger)
 

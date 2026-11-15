@@ -21,6 +21,9 @@ Slack doesn't let apps upload custom emoji, so workspaces add the coin images th
 - **Begging** for anyone nearly broke: `/bank beg 5 for coffee`, with buttons to spare a coin or five. It counts as
   charity, not thanks. At the morning round the central bank also pays them a stimmy check out of its reserves, so
   nobody is stuck at zero (`src/server/begging.ts`).
+- **Games of skill** between two people, where the house isn't involved and luck isn't either: connect four
+  (`/bank connect @someone 10`) and rock paper scissors, best of three (`/bank rps @someone 10`). Both stakes are held
+  until it's over, and ten minutes without a move loses on time (`src/server/matches.ts`).
 - **Games between people**: a duel with anyone who takes it (`/bank duel 10`), a heist where a crew of up to five robs the house
   together and a caught crew goes to jail unless someone pays bail (`/bank heist 10`, `/bank bail`, `src/server/tables.ts`), and office bets on a yes-or-no question, where whoever called
   it splits the pot (`/bank pool will the demo work?`, `src/server/pools.ts`).
