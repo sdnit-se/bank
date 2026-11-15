@@ -10,6 +10,7 @@
 import { BONDS, BOUNTIES, CENTRAL, CENTS, HOUSE, INSTITUTIONS, MARKET, nextDraw, POOLS, POT, toCents, type Config, type Economy } from "../shared/types"
 import { matureBonds } from "./bonds"
 import { welfare } from "./begging"
+import { vaultNews } from "./vault"
 import { matchesDue, offerMatch, type MatchGame } from "./matches"
 import { expireBounties } from "./bounties"
 import {
@@ -383,7 +384,7 @@ export async function settle(ledger: Ledger) {
     lottery = { winner, pot, mine, sold: tickets.reduce((sum, ticket) => sum + ticket.count, 0), tax }
   }
 
-  const posted = await publish(ledger, { wealth, matured, checks, expired, abandoned, lottery, honours: award(ledger) })
+  const posted = await publish(ledger, { wealth, matured, checks, vault: vaultNews(ledger), expired, abandoned, lottery, honours: award(ledger) })
   // Bank can't post where it isn't a member, so a winner the paper didn't reach is told directly.
   if (lottery && !posted) {
     const text = drawLine(secureRand, { winner: `<@${lottery.winner}>`, pot: currency(config, lottery.pot), share: `${lottery.mine} of ${lottery.sold}`, own: currency(config, lottery.mine * CENTS) }) + taxed(config, lottery.tax)

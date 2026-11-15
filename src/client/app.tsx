@@ -10,11 +10,12 @@ import { Tabs } from "@opencode/ui/tabs"
 import { TextInput } from "@opencode/ui/text-input"
 import { createMemo, createResource, createRoot, createSignal, For, type JSX, Match, Show, Switch } from "solid-js"
 import { createStore, reconcile, unwrap } from "solid-js/store"
-import { amountText, BONDS, BOUNTIES, CENTRAL, currency, HOUSE, INSTITUTIONS, type Config, type CustomEmoji, type Entry, type History, type Listing, type Me, type Shop, type Vault } from "../shared/types"
+import { amountText, BONDS, BOUNTIES, CENTRAL, currency, HOUSE, INSTITUTIONS, type Config, type CustomEmoji, type Entry, type History, type Listing, type Me, type Shop } from "../shared/types"
 import { api, ApiError, BASE, type Person, type Stocked } from "./api"
 import { CasinoView } from "./casino"
 import { EconomyView } from "./economy"
 import { MarketBoard, PortfolioView } from "./portfolio"
+import { VaultView } from "./vault"
 
 export function App() {
   const [me, { refetch }] = createResource(() =>
@@ -218,7 +219,8 @@ function NotInstalled(props: { me: Me }) {
 
 function Dashboard(props: { me: Me; refresh: () => void }) {
   const config = () => props.me.config
-  const [tab, setTab] = createSignal("leaderboard")
+  // Slack's "Play in the browser" lands straight on the vault.
+  const [tab, setTab] = createSignal(location.hash === "#vault" && props.me.config.vault > 0 ? "vault" : "leaderboard")
   const [leaderboard, leaderboardActions] = createResource(() => api.leaderboard())
   const [history, historyActions] = createResource(() => api.history())
   const [economy, economyActions] = createResource(() => api.economy())
@@ -822,91 +824,6 @@ function GiveView(props: { me: Me; done: () => void }) {
           <Status value={status()} />
         </div>
       </form>
-    </Panel>
-  )
-}
-
-// ---------- the vault
-
-/** Today's word: what has been tried, marked letter by letter, and a field for the next try. */
-function VaultView(props: { me: Me; done: () => void }) {
-  const [vault, { mutate }] = createResource(() => api.vault())
-  const [word, setWord] = createSignal("")
-  const [problem, setProblem] = createSignal<string | null>(null)
-  const [busy, setBusy] = createSignal(false)
-  const coins = (amount: number) => currency(props.me.config, amount)
-  const blanks = () => Array.from({ length: vault()?.left ?? 0 }, () => "     ")
-  const submit = async (event: Event) => {
-    event.preventDefault()
-    setBusy(true)
-    setProblem(null)
-    try {
-      const next = await api.crack(word())
-      mutate(next)
-      setWord("")
-      if (next.solved) props.done()
-    } catch (error) {
-      setProblem((error as Error).message)
-    } finally {
-      setBusy(false)
-    }
-  }
-  const row = (letters: string, marks?: string) => (
-    <div class="flex gap-1.5">
-      <For each={[...letters]}>{(letter, index) => <span class="tile" data-mark={marks?.[index()]}>{letter}</span>}</For>
-    </div>
-  )
-  return (
-    <Panel
-      title="The vault"
-      description={
-        <>
-          A five-letter word a day, yours alone, and six tries. It costs nothing, and the central bank pays {coins(props.me.config.vault)} for
-          every try you didn't need. Or <Code>/bank vault crane</Code>.
-        </>
-      }
-    >
-      <Show when={vault()} fallback={<Empty>Loading…</Empty>}>
-        {(state) => (
-          <div class="px-4 pb-4 flex flex-col gap-4">
-            <div class="flex flex-col gap-1.5">
-              <For each={state().rows}>{(tried) => row(tried.word, tried.marks)}</For>
-              <For each={blanks()}>{(blank) => row(blank)}</For>
-            </div>
-            <Switch>
-              <Match when={state().solved}>
-                <div class="positive">Cracked in {state().rows.length}. A new word comes after the morning draw.</div>
-              </Match>
-              <Match when={state().answer}>
-                <div class="muted">
-                  It was <span class="strong">{state().answer}</span>. A new word comes after the morning draw.
-                </div>
-              </Match>
-              <Match when={true}>
-                <form class="flex flex-wrap items-center gap-3" onSubmit={submit}>
-                  <TextInput class="w-32" maxLength={5} autocomplete="off" autocapitalize="off" spellcheck={false} placeholder="crane" value={word()} onInput={(event) => setWord(event.currentTarget.value.toLowerCase().replace(/[^a-z]/g, ""))} />
-                  <Button type="submit" variant="contrast" disabled={busy() || word().length !== 5}>
-                    Try it
-                  </Button>
-                  <span class="muted">Getting it now pays {coins(state().left * state().pays)}.</span>
-                  <Show when={problem()}>{(text) => <span class="danger">{text()}</span>}</Show>
-                </form>
-              </Match>
-            </Switch>
-            <div class="faint flex flex-wrap gap-x-4 gap-y-1">
-              <span class="flex items-center gap-1.5">
-                <span class="tile tile-key" data-mark="2" /> right letter, right place
-              </span>
-              <span class="flex items-center gap-1.5">
-                <span class="tile tile-key" data-mark="1" /> in the word, somewhere else
-              </span>
-              <span class="flex items-center gap-1.5">
-                <span class="tile tile-key" data-mark="0" /> not in it
-              </span>
-            </div>
-          </div>
-        )}
-      </Show>
     </Panel>
   )
 }

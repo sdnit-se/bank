@@ -208,7 +208,8 @@ async function interactions(request: Request, env: Env, ctx: ExecutionContext) {
   }
   const action = payload.actions?.[0]
   const url = payload.response_url
-  if (payload.type === "block_actions" && payload.team && payload.user && action && url?.startsWith("https://hooks.slack.com/")) {
+  // A button that opens a page (its id ends in _open) has already done its job.
+  if (payload.type === "block_actions" && payload.team && payload.user && action && !action.action_id.endsWith("_open") && url?.startsWith("https://hooks.slack.com/")) {
     ctx.waitUntil(
       workspace(env, payload.team.id)
         .interaction({ user: payload.user.id, action: action.action_id, value: action.value ?? action.selected_option?.value ?? "" })

@@ -75,8 +75,24 @@ export type Vault = {
   /** The word, once they've run out of tries without finding it. */
   answer: string | null
   pays: number
+  /** What the central bank paid for cracking it: zero if it had nothing, null while it isn't cracked. */
+  paid: number | null
   /** When the next word comes. */
   next: number
+  record: VaultRecord
+  /** Everyone who has had a go today, best first. Marks only: the words are their own. */
+  office: { id: string; name: string; image: string | null; marks: string[]; solved: boolean }[]
+}
+
+/** How someone has done at the vault so far. */
+export type VaultRecord = {
+  played: number
+  cracked: number
+  /** Cracked in a row, counting only the days they played. */
+  streak: number
+  best: number
+  /** How many they cracked in one try, in two, and so on to six. */
+  spread: number[]
 }
 
 /**

@@ -8,7 +8,7 @@ import { bounties, bountyClick } from "../src/server/bounties"
 import { shop, shopClick, stock, unstock } from "../src/server/shop"
 import { beg, begClick } from "../src/server/begging"
 import { matchClick } from "../src/server/matches"
-import { marks, vaultCommand } from "../src/server/vault"
+import { marks, vaultCommand, vaultFor, vaultNews } from "../src/server/vault"
 import { sources } from "../src/server/stats"
 import { heistsDue, interact } from "../src/server/tables"
 import { BOUNTIES, CENTRAL, CENTS, HOUSE, nextDraw, POOLS, POT } from "../src/shared/types"
@@ -427,9 +427,15 @@ test("the vault costs nothing to try and pays out of the central bank for every 
   expect((await guess(B, word(B)))!.text).toContain("broke too")
   expect(w.balance(B)).toBe(200)
   expect(w.total()).toBe(before)
-  // A new word comes with the morning round.
-  clock.now += 24 * 60 * 60_000
+  // What happened is kept: for their record, for everyone else's view of the day, and for the morning paper.
+  expect(vaultFor(w.ledger, A)).toMatchObject({ solved: true, paid: 10 * CENTS, record: { played: 1, cracked: 1, streak: 1, spread: [0, 1, 0, 0, 0, 0] } })
+  expect(vaultFor(w.ledger, B).office.map((person) => [person.id, person.marks.length, person.solved])).toEqual([[A, 2, true], [B, 2, true]])
+  expect(vaultFor(w.ledger, B).paid).toBe(0)
+  // A new word comes with the morning round, and the paper has yesterday's.
+  clock.now = nextDraw(clock.now)
+  expect(vaultNews(w.ledger).got).toEqual([{ name: "uaaa", tries: 2 }, { name: "ubbb", tries: 2 }])
   expect((await guess(A, "zzzzz"))!.text).toContain("5 tries left")
+  expect(vaultFor(w.ledger, A).office).toHaveLength(1)
 })
 
 test("an office bet pays the whole pot to the side that was right, and gives stakes back when nobody was", async () => {

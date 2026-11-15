@@ -4,6 +4,7 @@
 
 import { BONDS, BOUNTIES, CENTRAL, HOUSE, POOLS, POT } from "../shared/types"
 import type { welfare } from "./begging"
+import type { vaultNews } from "./vault"
 import type { matureBonds } from "./bonds"
 import { say, secureRand, type Line } from "./games"
 import { held, newsroom, section, type Block, type Ledger } from "./ledger"
@@ -20,6 +21,8 @@ export type Round = {
   wealth: { collected: number; payers: number } | null
   matured: ReturnType<typeof matureBonds>
   checks: ReturnType<typeof welfare>
+  /** Yesterday's vault: who got in, and who didn't. */
+  vault?: ReturnType<typeof vaultNews>
   /** Office bets called off for being open too long. */
   expired: string[]
   /** Bounties called off for the same reason. */
@@ -98,6 +101,12 @@ const COPY = {
     () => `The central bank calls it a safety net. The house calls it a delivery.`,
     () => `Means-tested, which is a polite way of saying the bank checked and yes, it really is that bad.`,
   ],
+  vault: [
+    () => `Paid by the central bank for knowing words, which is as close as this office has come to a literacy programme.`,
+    () => `Five letters. Several of the people above write documentation for a living.`,
+    () => `The only money in this paper that nobody had to lose first.`,
+  ],
+  vaultShut: [() => `An everyday English word, five letters, six tries. The vault would like to thank everyone for the job security.`],
   unpaid: [
     () => `The safety net turned out to be mostly hole. The central bank is also broke, which it describes as "solidarity".`,
     () => `The central bank looked into its reserves, found the same thing they have, and wishes them well.`,
@@ -209,6 +218,13 @@ export async function publish(ledger: Ledger, round: Round, now = Date.now()) {
     story(`Stimmy checks went out: ${coins(each)} ${paid.length === 1 ? "to" : "each to"} ${names(paid)}`, line(COPY.checks, { each: coins(each) }))
   } else if (round.checks?.missed) {
     story(`No stimmy checks: the central bank couldn't cover ${count(round.checks.missed, "person", "people").toLowerCase()}`, line(COPY.unpaid))
+  }
+  if (round.vault?.got.length) {
+    const { got, shut } = round.vault
+    const locked = shut.length > 0 && `${shut.slice(0, 8).join(", ")} never got in.`
+    story(`The vault: ${got.slice(0, 8).map((person) => `${person.name} in ${person.tries}`).join(", ")}`, locked, line(COPY.vault))
+  } else if (round.vault?.shut.length) {
+    story(`Nobody cracked the vault: ${round.vault.shut.slice(0, 8).join(", ")} tried`, line(COPY.vaultShut))
   }
   if (begged.size) {
     const total = [...begged.values()].reduce((sum, amount) => sum + amount, 0)

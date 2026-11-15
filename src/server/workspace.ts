@@ -849,7 +849,7 @@ export class Workspace extends DurableObject<Env> {
   }
 
   private inCoins(vault: Vault): Vault {
-    return { ...vault, pays: vault.pays / CENTS }
+    return { ...vault, pays: vault.pays / CENTS, paid: vault.paid === null ? null : vault.paid / CENTS }
   }
 
   async give(viewer: Viewer, to: string, amount: number, note: string | null) {
