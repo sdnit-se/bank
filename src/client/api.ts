@@ -1,4 +1,4 @@
-import type { Admin, CasinoStats, Channel, Config, CustomEmoji, Economy, History, Leaderboard, MarketStats, Me, Portfolio, Shop, Vault } from "../shared/types"
+import type { Admin, CasinoStats, Channel, Config, CustomEmoji, Economy, History, Leaderboard, MarketStats, Me, Portfolio, Race, RaceResult, Shop, Vault } from "../shared/types"
 
 export const BASE = "/bank"
 
@@ -37,6 +37,9 @@ export const api = {
   market: () => request<MarketStats>("GET", "/market"),
   history: () => request<History>("GET", "/history"),
   people: () => request<Person[]>("GET", "/people"),
+  race: () => request<Race>("GET", "/race"),
+  startRace: () => request<{ id: number; text: string }>("POST", "/race"),
+  finishRace: (input: { id: number; typed: string; ms: number; keys: number }) => request<RaceResult>("POST", "/race/finish", input),
   vault: () => request<Vault>("GET", "/vault"),
   crack: (word: string) => request<Vault>("POST", "/vault", { word }),
   shop: () => request<Shop>("GET", "/shop"),

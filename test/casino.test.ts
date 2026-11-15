@@ -8,6 +8,7 @@ import { bounties, bountyClick } from "../src/server/bounties"
 import { shop, shopClick, stock, unstock } from "../src/server/shop"
 import { beg, begClick } from "../src/server/begging"
 import { matchClick } from "../src/server/matches"
+import { finishRace, startRace } from "../src/server/race"
 import { marks, vaultCommand, vaultFor, vaultNews } from "../src/server/vault"
 import { sources } from "../src/server/stats"
 import { heistsDue, interact } from "../src/server/tables"
@@ -436,6 +437,31 @@ test("the vault costs nothing to try and pays out of the central bank for every 
   expect(vaultNews(w.ledger).got).toEqual([{ name: "uaaa", tries: 2 }, { name: "ubbb", tries: 2 }])
   expect((await guess(A, "zzzzz"))!.text).toContain("5 tries left")
   expect(vaultFor(w.ledger, A).office).toHaveLength(1)
+})
+
+test("a typing race pays a wage in new coins by speed, up to the day's limit, and only for a time that could be real", async () => {
+  const w = world()
+  const before = w.total()
+  /** Runs a race at about this many words a minute, by the racer's clock and by ours. */
+  const run = async (wpm: number, claimed?: number) => {
+    const race = await startRace(w.ledger, A)
+    const ms = Math.round((race.text.length / 5 / wpm) * 60_000)
+    clock.now += ms
+    return finishRace(w.ledger, A, { id: race.id, typed: race.text, ms: claimed ?? ms, keys: race.text.length })
+  }
+  expect(await run(85)).toMatchObject({ paid: 3 * CENTS, personal: true, record: true })
+  expect((await run(30)).paid).toBe(0)
+  const cheat = await startRace(w.ledger, A)
+  expect(() => finishRace(w.ledger, A, { id: cheat.id, typed: "something else", ms: 5000, keys: 14 })).toThrow("isn't what was dealt")
+  // A claimed time shorter than the wait is fine, a longer one isn't, and neither is a speed nobody types at.
+  expect(() => finishRace(w.ledger, A, { id: cheat.id, typed: cheat.text, ms: 60_000, keys: 200 })).toThrow("doesn't add up")
+  await expect(run(60, 1500)).rejects.toThrow("Nobody types that fast")
+  // Twenty coins a day and no more, however many races.
+  for (let race = 0; race < 8; race++) await run(120)
+  expect(w.balance(A)).toBe(120)
+  expect(w.total()).toBe(before + 20)
+  clock.now = nextDraw(clock.now) + 60_000
+  expect((await run(120)).paid).toBe(4 * CENTS)
 })
 
 test("an office bet pays the whole pot to the side that was right, and gives stakes back when nobody was", async () => {

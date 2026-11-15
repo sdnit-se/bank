@@ -64,6 +64,32 @@ export type Config = {
   begging: Begging
   /** What the central bank pays for cracking the daily vault, for each try that wasn't needed. Zero shuts it. */
   vault: number
+  /** The most one person can earn in a day at the typing race, which pays in newly made coins. Zero pays nothing. */
+  wages: number
+}
+
+/** The typing race as someone sees it: the board, their own figures, and what it pays. */
+export type Race = {
+  board: { id: string; name: string; image: string | null; best: number; races: number }[]
+  best: number
+  /** Over their last ten races. */
+  average: number
+  races: number
+  /** What they have earned racing today, and the most anyone can. */
+  earned: number
+  limit: number
+  /** What a race pays from how many words a minute, best first. */
+  wages: { from: number; pays: number }[]
+}
+
+export type RaceResult = {
+  wpm: number
+  accuracy: number
+  paid: number
+  /** Their own best, and the best anyone here has done. */
+  personal: boolean
+  record: boolean
+  race: Race
 }
 
 /** Someone's go at today's vault. Each mark is 2 for the right letter in the right place, 1 for in the word elsewhere, 0 for not in it. */
@@ -126,6 +152,7 @@ export const defaultConfig: Config = {
   channel: "",
   begging: { below: 10, minutes: 60, perDay: 1, welfare: 5 },
   vault: 2,
+  wages: 20,
 }
 
 /**
@@ -140,7 +167,8 @@ export const defaultConfig: Config = {
  * `bond` is coins going into a bond and coming back out, and `shop` is someone paying for something in a shop: the
  * bank's, paid to the central bank, or a colleague's, paid to them. `bounty` is coins put up for a job, or handed back when it is called off; paying one out is
  * a `give` from the bounty board, since that is what it is. `alms` is a coin spared for someone begging: a gift, but
- * charity rather than thanks, so it doesn't count towards what colleagues have given them.
+ * charity rather than thanks, so it doesn't count towards what colleagues have given them. `wage` is what a typing
+ * race pays: like a grant, coins that didn't exist before.
  */
 export type EntryKind =
   | "grant"
@@ -161,6 +189,7 @@ export type EntryKind =
   | "shop"
   | "bounty"
   | "alms"
+  | "wage"
 
 /**
  * The accounts that aren't people. They hold coins like anyone else, so games move coins around without creating or

@@ -15,6 +15,7 @@ import { api, ApiError, BASE, type Person, type Stocked } from "./api"
 import { CasinoView } from "./casino"
 import { EconomyView } from "./economy"
 import { MarketBoard, PortfolioView } from "./portfolio"
+import { RaceView } from "./race"
 import { VaultView } from "./vault"
 
 export function App() {
@@ -219,8 +220,8 @@ function NotInstalled(props: { me: Me }) {
 
 function Dashboard(props: { me: Me; refresh: () => void }) {
   const config = () => props.me.config
-  // Slack's "Play in the browser" lands straight on the vault.
-  const [tab, setTab] = createSignal(location.hash === "#vault" && props.me.config.vault > 0 ? "vault" : "leaderboard")
+  // Slack's "Play in the browser" lands straight on the game it was about.
+  const [tab, setTab] = createSignal(location.hash === "#vault" || location.hash === "#race" ? "games" : "leaderboard")
   const [leaderboard, leaderboardActions] = createResource(() => api.leaderboard())
   const [history, historyActions] = createResource(() => api.history())
   const [economy, economyActions] = createResource(() => api.economy())
@@ -284,9 +285,7 @@ function Dashboard(props: { me: Me; refresh: () => void }) {
             <Show when={config().market.enabled}>
               <Tabs.Trigger value="portfolio">Market</Tabs.Trigger>
             </Show>
-            <Show when={config().vault > 0}>
-              <Tabs.Trigger value="vault">Vault</Tabs.Trigger>
-            </Show>
+            <Tabs.Trigger value="games">Games</Tabs.Trigger>
             <Tabs.Trigger value="shop">Shop</Tabs.Trigger>
             <Tabs.Trigger value="give">Give</Tabs.Trigger>
             <Show when={props.me.admin}>
@@ -314,8 +313,8 @@ function Dashboard(props: { me: Me; refresh: () => void }) {
               <MarketBoard stats={market()} />
             </div>
           </Match>
-          <Match when={tab() === "vault"}>
-            <VaultView me={props.me} done={reload} />
+          <Match when={tab() === "games"}>
+            <GamesView me={props.me} done={reload} />
           </Match>
           <Match when={tab() === "shop"}>
             <ShopView me={props.me} done={reload} />
@@ -340,6 +339,30 @@ function Stat(props: { label: string; value: number; signed?: boolean }) {
         {props.signed && props.value !== 0 ? (props.value > 0 ? "+" : "−") : ""}
         {amountText(Math.abs(props.value))}
       </span>
+    </div>
+  )
+}
+
+/** The games that cost nothing to play and pay for playing well, one at a time. The casino's are in Slack. */
+function GamesView(props: { me: Me; done: () => void }) {
+  const games = () => [...(props.me.config.vault > 0 ? [{ key: "vault", label: "The vault" }] : []), { key: "race", label: "Typing race" }]
+  const [game, setGame] = createSignal(location.hash === "#race" || props.me.config.vault <= 0 ? "race" : "vault")
+  return (
+    <div class="flex flex-col gap-3">
+      <Show when={games().length > 1}>
+        <div class="flex flex-wrap items-center gap-1.5">
+          <For each={games()}>
+            {(option) => (
+              <Button variant={game() === option.key ? "neutral" : "ghost-muted"} size="small" onClick={() => setGame(option.key)}>
+                {option.label}
+              </Button>
+            )}
+          </For>
+        </div>
+      </Show>
+      <Show when={game() === "vault"} fallback={<RaceView me={props.me} done={props.done} />}>
+        <VaultView me={props.me} done={props.done} />
+      </Show>
     </div>
   )
 }
@@ -490,6 +513,8 @@ function describe(entry: Entry, history: History, viewer: string | null) {
       return entry.from === BOUNTIES ? `${name(entry.to)} got a bounty stake back` : `${name(entry.from)} put coins on a bounty`
     case "alms":
       return `${name(entry.from)} spared ${name(entry.to)} some change`
+    case "wage":
+      return `${name(entry.to)} earned a wage typing at ${entry.note ?? "speed"}`
     case "print":
       return `the market printed ${viewer === entry.actor ? "your" : `${name(entry.actor)}'s`} gain on ${entry.note ?? "a sale"}`
     default:
@@ -500,7 +525,7 @@ function describe(entry: Entry, history: History, viewer: string | null) {
 
 /** Entries whose note is written by Bank and already part of the description. */
 function fixedNote(entry: Entry) {
-  return ["grant", "bet", "payout", "duel", "sweep", "stimulus", "buy", "sell", "tax", "print", "bond", "shop", "bounty"].includes(entry.kind)
+  return ["grant", "bet", "payout", "duel", "sweep", "stimulus", "buy", "sell", "tax", "print", "bond", "shop", "bounty", "wage"].includes(entry.kind)
 }
 
 const page = 30
@@ -1289,6 +1314,10 @@ function SettingsPanel(props: { me: Me; changed: () => void }) {
 
         <Numbers title="The vault" note="A free word game, a word a day each. The central bank pays this for every one of the six tries someone didn't need, while it has the coins. 0 shuts it.">
           <NumberField label="Per try left, coins" value={draft.vault} set={(value) => setDraft("vault", value)} />
+        </Numbers>
+
+        <Numbers title="Typing race" note="A race pays 1 to 4 coins by speed, in newly made coins: it is the one thing that adds to the supply by itself. This is the most one person can earn at it in a day. 0 leaves the race open and pays nothing.">
+          <NumberField label="Most a day, coins" value={draft.wages} set={(value) => setDraft("wages", value)} />
         </Numbers>
 
         <div class="setting">

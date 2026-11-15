@@ -19,6 +19,7 @@ import {
   type Me,
   type Portfolio,
   type Shop,
+  type Race,
   type Vault,
   toCents,
 } from "../shared/types"
@@ -36,6 +37,7 @@ import { publishHome } from "./home"
 import { beg, begClick, begHelp, setupBegging } from "./begging"
 import { matchClick } from "./matches"
 import { crack, setupVault, vaultCommand, vaultFor, vaultHelp } from "./vault"
+import { finishRace, raceFor, setupRace, startRace } from "./race"
 import { buy, setupShop, shop, shopClick, shopFor, shopHelp, stock, unstock } from "./shop"
 import { heistsDue, interact } from "./tables"
 import { titles, titlesOf } from "./titles"
@@ -211,6 +213,7 @@ export class Workspace extends DurableObject<Env> {
     setupShop(this.sql)
     setupBegging(this.sql)
     setupVault(this.sql)
+    setupRace(this.sql)
     this.ctx.storage.transactionSync(() => convertToCents(this.sql))
   }
 
@@ -848,6 +851,25 @@ export class Workspace extends DurableObject<Env> {
     return this.inCoins(result.vault)
   }
 
+  race(viewer: Viewer) {
+    return this.raceInCoins(raceFor(this.ledger(), viewer.id))
+  }
+
+  startRace(viewer: Viewer) {
+    this.assertActive(viewer)
+    return startRace(this.ledger(), viewer.id)
+  }
+
+  finishRace(viewer: Viewer, input: Parameters<typeof finishRace>[2]) {
+    this.assertActive(viewer)
+    const result = this.ctx.storage.transactionSync(() => finishRace(this.ledger(), viewer.id, input))
+    return { ...result, paid: result.paid / CENTS, race: this.raceInCoins(result.race) }
+  }
+
+  private raceInCoins(race: Race): Race {
+    return { ...race, earned: race.earned / CENTS, limit: race.limit / CENTS }
+  }
+
   private inCoins(vault: Vault): Vault {
     return { ...vault, pays: vault.pays / CENTS, paid: vault.paid === null ? null : vault.paid / CENTS }
   }
@@ -908,6 +930,7 @@ export class Workspace extends DurableObject<Env> {
         welfare: whole(input.begging?.welfare ?? this.settings().begging.welfare, 0),
       },
       vault: Math.min(whole(input.vault ?? this.settings().vault, 0), 1_000),
+      wages: Math.min(whole(input.wages ?? this.settings().wages, 0), 1_000),
     }
     // Bank can only post where it is a member.
     if (config.channel && config.channel !== this.settings().channel) {
@@ -1223,6 +1246,7 @@ export class Workspace extends DurableObject<Env> {
     if (sold) return this.changed(sold, before)
     const begged = await beg(this.ledger(), { sub, words: words.slice(1), user: params.user_id, channel: params.channel ?? null })
     if (begged) return this.changed(begged, before)
+    if (sub === "race" || sub === "type") return reply(`the typing race is on <${this.env.PUBLIC_URL}#race|the bank's site>: a keyboard, a clock, and up to ${currency(config, config.wages / CENTS)} a day for being quick.`)
     const cracked = await vaultCommand(this.ledger(), { sub, words: words.slice(1), user: params.user_id })
     if (cracked) return this.changed(cracked, before)
     const earned = titles(this.ledger(), { sub, user: params.user_id })
@@ -1269,6 +1293,7 @@ export class Workspace extends DurableObject<Env> {
       shopHelp(this.ledger()),
       begHelp(this.ledger()),
       vaultHelp(this.ledger()),
+      config.wages > 0 ? [`*typing race* · under Games on <${this.env.PUBLIC_URL}#race|the bank's site> · type a line of words as fast as you can. no stake, and it pays up to ${currency(config, config.wages / CENTS)} a day`] : [],
       [`<${this.env.PUBLIC_URL}|open bank> · the leaderboard, the economy, and who the casino has ruined`],
     ]
       .map((lines) => lines.filter(Boolean).join("\n"))

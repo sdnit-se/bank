@@ -40,3 +40,18 @@ trait treat trend trial tribe trick truck truly trunk trust truth twice twist un
 until upper upset urban usage usual valid value vault video vinyl virus visit vital vivid vocal voice voter \
 wagon waste watch water weary weigh weird whale wheat wheel where which while white whole widow width woman \
 world worry worth would wound wrist write wrong yacht yield young youth zebra".split(" ")
+
+/** What a typing race is made of: plain words everyone knows, so it is the fingers being tested and not the spelling. */
+export const COMMON = "\
+about after again against always another answer around because become before began begin behind being below \
+better between both bring build business call came change children city close come company could country course \
+different does done down during each early earth enough even every example family father feel find first follow \
+form found friend from general give good government great group hand have head hear help here high home house \
+however idea important into just keep kind know large last late learn leave left letter life light like line \
+little live long look made make many might money more morning most mother move much must name near need never \
+next night nothing number often once only open order other over own page paper part people person place plan \
+play point possible present problem program public question quite read real right room same school second seem \
+sentence several should show side since small some something sound still story study such system take tell than \
+that their them then there these they thing think this those thought three through time together took toward \
+turn under until upon very want water week well went were what when where which while white whole will with \
+without word work world would write year young".split(" ")

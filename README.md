@@ -23,6 +23,9 @@ Slack doesn't let apps upload custom emoji, so workspaces add the coin images th
   nobody is stuck at zero (`src/server/begging.ts`).
 - **The vault**, the one game that needs no coins: a five-letter word a day, six tries, `/vault crane` or `/word crane` or the
   Vault tab. The central bank pays for cracking it, more the fewer tries it took (`src/server/vault.ts`).
+- **A typing race** on the web, under Games next to the vault: a line of plain words against the clock, your own best
+  and the office record. It is the one thing that makes coins from nothing but effort, as often as anyone likes, so
+  what it pays is newly made and limited per person per day (`src/server/race.ts`).
 - **Games of skill** between two people, where the house isn't involved and luck isn't either: connect four
   (`/bank connect @someone 10`) and rock paper scissors, best of three (`/bank rps @someone 10`). Both stakes are held
   until it's over, and ten minutes without a move loses on time (`src/server/matches.ts`).

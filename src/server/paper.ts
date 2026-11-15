@@ -4,6 +4,7 @@
 
 import { BONDS, BOUNTIES, CENTRAL, HOUSE, POOLS, POT } from "../shared/types"
 import type { welfare } from "./begging"
+import { raceNews } from "./race"
 import type { vaultNews } from "./vault"
 import type { matureBonds } from "./bonds"
 import { say, secureRand, type Line } from "./games"
@@ -105,6 +106,10 @@ const COPY = {
     () => `Paid by the central bank for knowing words, which is as close as this office has come to a literacy programme.`,
     () => `Five letters. Several of the people above write documentation for a living.`,
     () => `The only money in this paper that nobody had to lose first.`,
+  ],
+  raced: [
+    (w) => `The old record was ${w.before}. Productivity elsewhere in the building is not known to have moved.`,
+    (w) => `${w.who} can now type faster than anyone here can think, which was already true of most of the office.`,
   ],
   vaultShut: [() => `An everyday English word, five letters, six tries. The vault would like to thank everyone for the job security.`],
   unpaid: [
@@ -226,6 +231,8 @@ export async function publish(ledger: Ledger, round: Round, now = Date.now()) {
   } else if (round.vault?.shut.length) {
     story(`Nobody cracked the vault: ${round.vault.shut.slice(0, 8).join(", ")} tried`, line(COPY.vaultShut))
   }
+  const fastest = raceNews(ledger, since)
+  if (fastest) story(`${fastest.name} set the office typing record: ${fastest.wpm} words a minute`, line(COPY.raced, { who: fastest.name, before: String(fastest.before) }))
   if (begged.size) {
     const total = [...begged.values()].reduce((sum, amount) => sum + amount, 0)
     story(`${names([...begged.keys()])} begged, and ${begged.size === 1 ? "was" : "were"} spared ${coins(total)}`, line(COPY.begged))
