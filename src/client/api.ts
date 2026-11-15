@@ -1,4 +1,4 @@
-import type { Admin, CasinoStats, Channel, Config, CustomEmoji, Economy, History, Leaderboard, MarketStats, Me, Portfolio, Shop } from "../shared/types"
+import type { Admin, CasinoStats, Channel, Config, CustomEmoji, Economy, History, Leaderboard, MarketStats, Me, Portfolio, Shop, Vault } from "../shared/types"
 
 export const BASE = "/bank"
 
@@ -37,6 +37,8 @@ export const api = {
   market: () => request<MarketStats>("GET", "/market"),
   history: () => request<History>("GET", "/history"),
   people: () => request<Person[]>("GET", "/people"),
+  vault: () => request<Vault>("GET", "/vault"),
+  crack: (word: string) => request<Vault>("POST", "/vault", { word }),
   shop: () => request<Shop>("GET", "/shop"),
   stock: (input: Stocked) => request<Shop>("PUT", "/shop", input),
   unstock: (id: number) => request<Shop>("DELETE", "/shop", { id }),

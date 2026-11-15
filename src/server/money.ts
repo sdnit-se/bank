@@ -18,6 +18,7 @@ export function inCents(config: Config): Config {
     games: { ...config.games, maxBet: config.games.maxBet * CENTS, reserve: config.games.reserve * CENTS },
     taxes: { ...config.taxes, wealthAbove: config.taxes.wealthAbove * CENTS },
     begging: { ...config.begging, below: config.begging.below * CENTS, welfare: config.begging.welfare * CENTS },
+    vault: config.vault * CENTS,
   }
 }
 

@@ -10,7 +10,7 @@ import { Tabs } from "@opencode/ui/tabs"
 import { TextInput } from "@opencode/ui/text-input"
 import { createMemo, createResource, createRoot, createSignal, For, type JSX, Match, Show, Switch } from "solid-js"
 import { createStore, reconcile, unwrap } from "solid-js/store"
-import { amountText, BONDS, BOUNTIES, CENTRAL, currency, HOUSE, INSTITUTIONS, type Config, type CustomEmoji, type Entry, type History, type Listing, type Me, type Shop } from "../shared/types"
+import { amountText, BONDS, BOUNTIES, CENTRAL, currency, HOUSE, INSTITUTIONS, type Config, type CustomEmoji, type Entry, type History, type Listing, type Me, type Shop, type Vault } from "../shared/types"
 import { api, ApiError, BASE, type Person, type Stocked } from "./api"
 import { CasinoView } from "./casino"
 import { EconomyView } from "./economy"
@@ -282,6 +282,9 @@ function Dashboard(props: { me: Me; refresh: () => void }) {
             <Show when={config().market.enabled}>
               <Tabs.Trigger value="portfolio">Market</Tabs.Trigger>
             </Show>
+            <Show when={config().vault > 0}>
+              <Tabs.Trigger value="vault">Vault</Tabs.Trigger>
+            </Show>
             <Tabs.Trigger value="shop">Shop</Tabs.Trigger>
             <Tabs.Trigger value="give">Give</Tabs.Trigger>
             <Show when={props.me.admin}>
@@ -308,6 +311,9 @@ function Dashboard(props: { me: Me; refresh: () => void }) {
               <PortfolioView config={config()} portfolio={portfolio()} />
               <MarketBoard stats={market()} />
             </div>
+          </Match>
+          <Match when={tab() === "vault"}>
+            <VaultView me={props.me} done={reload} />
           </Match>
           <Match when={tab() === "shop"}>
             <ShopView me={props.me} done={reload} />
@@ -465,6 +471,7 @@ function describe(entry: Entry, history: History, viewer: string | null) {
     case "sweep":
       return "the house paid its winnings to the central bank"
     case "stimulus":
+      if (entry.note === "the vault") return `${name(entry.to)} cracked the vault`
       return `the central bank paid ${name(entry.to)}${entry.note === "stimmy check" ? " a stimmy check" : ""}`
     case "buy":
       return `${name(entry.from)} bought ${entry.note ?? "shares"}`
@@ -815,6 +822,91 @@ function GiveView(props: { me: Me; done: () => void }) {
           <Status value={status()} />
         </div>
       </form>
+    </Panel>
+  )
+}
+
+// ---------- the vault
+
+/** Today's word: what has been tried, marked letter by letter, and a field for the next try. */
+function VaultView(props: { me: Me; done: () => void }) {
+  const [vault, { mutate }] = createResource(() => api.vault())
+  const [word, setWord] = createSignal("")
+  const [problem, setProblem] = createSignal<string | null>(null)
+  const [busy, setBusy] = createSignal(false)
+  const coins = (amount: number) => currency(props.me.config, amount)
+  const blanks = () => Array.from({ length: vault()?.left ?? 0 }, () => "     ")
+  const submit = async (event: Event) => {
+    event.preventDefault()
+    setBusy(true)
+    setProblem(null)
+    try {
+      const next = await api.crack(word())
+      mutate(next)
+      setWord("")
+      if (next.solved) props.done()
+    } catch (error) {
+      setProblem((error as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+  const row = (letters: string, marks?: string) => (
+    <div class="flex gap-1.5">
+      <For each={[...letters]}>{(letter, index) => <span class="tile" data-mark={marks?.[index()]}>{letter}</span>}</For>
+    </div>
+  )
+  return (
+    <Panel
+      title="The vault"
+      description={
+        <>
+          A five-letter word a day, yours alone, and six tries. It costs nothing, and the central bank pays {coins(props.me.config.vault)} for
+          every try you didn't need. Or <Code>/bank vault crane</Code>.
+        </>
+      }
+    >
+      <Show when={vault()} fallback={<Empty>Loading…</Empty>}>
+        {(state) => (
+          <div class="px-4 pb-4 flex flex-col gap-4">
+            <div class="flex flex-col gap-1.5">
+              <For each={state().rows}>{(tried) => row(tried.word, tried.marks)}</For>
+              <For each={blanks()}>{(blank) => row(blank)}</For>
+            </div>
+            <Switch>
+              <Match when={state().solved}>
+                <div class="positive">Cracked in {state().rows.length}. A new word comes after the morning draw.</div>
+              </Match>
+              <Match when={state().answer}>
+                <div class="muted">
+                  It was <span class="strong">{state().answer}</span>. A new word comes after the morning draw.
+                </div>
+              </Match>
+              <Match when={true}>
+                <form class="flex flex-wrap items-center gap-3" onSubmit={submit}>
+                  <TextInput class="w-32" maxLength={5} autocomplete="off" autocapitalize="off" spellcheck={false} placeholder="crane" value={word()} onInput={(event) => setWord(event.currentTarget.value.toLowerCase().replace(/[^a-z]/g, ""))} />
+                  <Button type="submit" variant="contrast" disabled={busy() || word().length !== 5}>
+                    Try it
+                  </Button>
+                  <span class="muted">Getting it now pays {coins(state().left * state().pays)}.</span>
+                  <Show when={problem()}>{(text) => <span class="danger">{text()}</span>}</Show>
+                </form>
+              </Match>
+            </Switch>
+            <div class="faint flex flex-wrap gap-x-4 gap-y-1">
+              <span class="flex items-center gap-1.5">
+                <span class="tile tile-key" data-mark="2" /> right letter, right place
+              </span>
+              <span class="flex items-center gap-1.5">
+                <span class="tile tile-key" data-mark="1" /> in the word, somewhere else
+              </span>
+              <span class="flex items-center gap-1.5">
+                <span class="tile tile-key" data-mark="0" /> not in it
+              </span>
+            </div>
+          </div>
+        )}
+      </Show>
     </Panel>
   )
 }
@@ -1276,6 +1368,10 @@ function SettingsPanel(props: { me: Me; changed: () => void }) {
           <NumberField label="Open, minutes" value={draft.begging.minutes} set={(value) => setDraft("begging", "minutes", value)} />
           <NumberField label="Pleas a day" value={draft.begging.perDay} set={(value) => setDraft("begging", "perDay", value)} />
           <NumberField label="Stimmy check, coins" value={draft.begging.welfare} set={(value) => setDraft("begging", "welfare", value)} />
+        </Numbers>
+
+        <Numbers title="The vault" note="A free word game, a word a day each. The central bank pays this for every one of the six tries someone didn't need, while it has the coins. 0 shuts it.">
+          <NumberField label="Per try left, coins" value={draft.vault} set={(value) => setDraft("vault", value)} />
         </Numbers>
 
         <div class="setting">

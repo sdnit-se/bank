@@ -21,6 +21,8 @@ Slack doesn't let apps upload custom emoji, so workspaces add the coin images th
 - **Begging** for anyone nearly broke: `/bank beg 5 for coffee`, with buttons to spare a coin or five. It counts as
   charity, not thanks. At the morning round the central bank also pays them a stimmy check out of its reserves, so
   nobody is stuck at zero (`src/server/begging.ts`).
+- **The vault**, the one game that needs no coins: a five-letter word a day, six tries, `/bank vault crane` or the
+  Vault tab. The central bank pays for cracking it, more the fewer tries it took (`src/server/vault.ts`).
 - **Games of skill** between two people, where the house isn't involved and luck isn't either: connect four
   (`/bank connect @someone 10`) and rock paper scissors, best of three (`/bank rps @someone 10`). Both stakes are held
   until it's over, and ten minutes without a move loses on time (`src/server/matches.ts`).

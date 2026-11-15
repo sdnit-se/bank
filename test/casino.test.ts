@@ -8,6 +8,7 @@ import { bounties, bountyClick } from "../src/server/bounties"
 import { shop, shopClick, stock, unstock } from "../src/server/shop"
 import { beg, begClick } from "../src/server/begging"
 import { matchClick } from "../src/server/matches"
+import { marks, vaultCommand } from "../src/server/vault"
 import { sources } from "../src/server/stats"
 import { heistsDue, interact } from "../src/server/tables"
 import { BOUNTIES, CENTRAL, CENTS, HOUSE, nextDraw, POOLS, POT } from "../src/shared/types"
@@ -402,6 +403,32 @@ test("connect four and rock paper scissors hold both stakes and pay them to whoe
   await settle(w.ledger)
   expect([w.balance(C), w.balance(POOLS)]).toEqual([110, 0])
   expect(w.total()).toBe(300)
+})
+
+test("the vault costs nothing to try and pays out of the central bank for every try that wasn't needed", async () => {
+  const w = world()
+  const guess = (user: string, word: string) => vaultCommand(w.ledger, { sub: "vault", words: [word], user })
+  const word = (user: string) => (w.db.query("select word from vaults where user_id = ?").get(user) as { word: string }).word
+  // A letter only counts as many times as the word has it.
+  expect([marks("sleep", "eerie"), marks("crane", "crane")]).toEqual(["11000", "22222"])
+  w.give(A, B, 100)
+  w.print(CENTRAL, 100)
+  const before = w.total()
+  expect((await guess(A, "zzzzz"))!.response_type).toBe("ephemeral")
+  expect((await guess(A, "zzzzz"))!.text).toContain("tried that one")
+  // Cracked on the second try: five tries to spare, two coins each.
+  expect((await guess(A, word(A)))!.response_type).toBe("in_channel")
+  expect([w.balance(A), w.balance(CENTRAL)]).toEqual([10, 90])
+  expect((await guess(A, "crane"))!.text).toContain("cracked today's")
+  // An empty bank pays nothing, and prints nothing either.
+  w.ledger.move({ from: CENTRAL, to: A, amount: 90 * CENTS, kind: "adjust" })
+  await guess(B, "zzzzz")
+  expect((await guess(B, word(B)))!.text).toContain("broke too")
+  expect(w.balance(B)).toBe(200)
+  expect(w.total()).toBe(before)
+  // A new word comes with the morning round.
+  clock.now += 24 * 60 * 60_000
+  expect((await guess(A, "zzzzz"))!.text).toContain("5 tries left")
 })
 
 test("an office bet pays the whole pot to the side that was right, and gives stakes back when nobody was", async () => {

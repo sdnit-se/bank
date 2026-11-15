@@ -93,6 +93,7 @@ function page(ledger: Ledger) {
     [
       rate > 0 ? `Bonds pay **${rate}% a week** (\`/bank bond 50\`).` : "No bonds on sale.",
       `It holds ${coins(held(ledger, CENTRAL))} and the house ${coins(held(ledger, HOUSE))}. Another ${coins(held(ledger, BOUNTIES))} sits on the bounty board.`,
+      config.vault > 0 && `\`/bank vault\` is free to play, and it pays up to ${coins(6 * config.vault)} for the day's word.`,
       config.begging.welfare > 0 && `Anyone holding under ${coins(config.begging.below)} gets a stimmy check of ${coins(config.begging.welfare)} at 09:00, while it has any.`,
     ]
       .filter(Boolean)

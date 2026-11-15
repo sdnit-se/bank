@@ -34,6 +34,7 @@ export const TITLES: { name: string; how: string; who: string }[] = [
   { name: "Bounty hunter", how: "collect 3 bounties", who: `select to_id as id from entries where kind = 'give' and from_id = '${BOUNTIES}' group by to_id having count(*) >= 3` },
   { name: "Philanthropist", how: "spare coins for 5 people begging", who: "select user_id as id from plea_gifts group by user_id having count(*) >= 5" },
   { name: "Professional beggar", how: "be spared 50 by begging", who: `select to_id as id from entries where kind = 'alms' group by to_id having sum(amount) >= ${coins(50)}` },
+  { name: "Safecracker", how: "crack the vault 10 times", who: `select to_id as id from entries where kind = 'stimulus' and note = 'the vault' group by to_id having count(*) >= 10` },
   { name: "On the dole", how: "collect 5 stimmy checks", who: `select to_id as id from entries where kind = 'stimulus' and note = 'stimmy check' group by to_id having count(*) >= 5` },
   { name: "Big spender", how: "spend 200 in the shop", who: `select from_id as id from entries where kind = 'shop' group by from_id having sum(amount) >= ${coins(200)}` },
 ]

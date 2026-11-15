@@ -62,6 +62,21 @@ export type Config = {
   /** The id of the channel the morning paper and the bank's other announcements go to. Empty until an admin picks one. */
   channel: string
   begging: Begging
+  /** What the central bank pays for cracking the daily vault, for each try that wasn't needed. Zero shuts it. */
+  vault: number
+}
+
+/** Someone's go at today's vault. Each mark is 2 for the right letter in the right place, 1 for in the word elsewhere, 0 for not in it. */
+export type Vault = {
+  rows: { word: string; marks: string }[]
+  /** Tries left, zero once it is cracked or lost. */
+  left: number
+  solved: boolean
+  /** The word, once they've run out of tries without finding it. */
+  answer: string | null
+  pays: number
+  /** When the next word comes. */
+  next: number
 }
 
 /**
@@ -94,6 +109,7 @@ export const defaultConfig: Config = {
   taxes: { transfer: 0, winnings: 0, wealth: 0, wealthAbove: 200, interest: 0 },
   channel: "",
   begging: { below: 10, minutes: 60, perDay: 1, welfare: 5 },
+  vault: 2,
 }
 
 /**

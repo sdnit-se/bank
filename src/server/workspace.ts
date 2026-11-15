@@ -19,11 +19,12 @@ import {
   type Me,
   type Portfolio,
   type Shop,
+  type Vault,
   toCents,
 } from "../shared/types"
 import { announceRate, bonded, bondHelp, bonds } from "./bonds"
 import { casinoHelp, economy, play, settle, setup } from "./casino"
-import { historyLine, playedLine, schedule, type Ledger, type Message } from "./ledger"
+import { historyLine, newsroom, playedLine, schedule, type Ledger, type Message } from "./ledger"
 import type { Env } from "./env"
 import { market, marketHelp, marketStats, portfolio, setupMarket } from "./market"
 import { convertToCents, inCents, money as currency } from "./money"
@@ -34,6 +35,7 @@ import { refreshFrontPage } from "./canvas"
 import { publishHome } from "./home"
 import { beg, begClick, begHelp, setupBegging } from "./begging"
 import { matchClick } from "./matches"
+import { crack, setupVault, vaultCommand, vaultFor, vaultHelp } from "./vault"
 import { buy, setupShop, shop, shopClick, shopFor, shopHelp, stock, unstock } from "./shop"
 import { heistsDue, interact } from "./tables"
 import { titles, titlesOf } from "./titles"
@@ -208,6 +210,7 @@ export class Workspace extends DurableObject<Env> {
     setupMarket(this.sql)
     setupShop(this.sql)
     setupBegging(this.sql)
+    setupVault(this.sql)
     this.ctx.storage.transactionSync(() => convertToCents(this.sql))
   }
 
@@ -829,6 +832,26 @@ export class Workspace extends DurableObject<Env> {
     return { ...shopFor(this.ledger()), message: answer.text }
   }
 
+  vault(viewer: Viewer) {
+    return this.inCoins(vaultFor(this.ledger(), viewer.id))
+  }
+
+  /** A try at the vault from the web. How it ended goes to the bank's channel, by name. */
+  async crack(viewer: Viewer, word: string) {
+    this.assertActive(viewer)
+    const ledger = this.ledger()
+    const result = await crack(ledger, viewer.id, String(word), ledger.row(viewer.id)?.name ?? viewer.name)
+    if (result.problem) throw new Error(result.problem.replace(/[`*]/g, ""))
+    const home = newsroom(ledger)
+    if (result.news && home) this.ctx.waitUntil(ledger.call("chat.postMessage", { channel: home, text: result.news, unfurl_links: false }).catch(() => undefined))
+    if (result.vault.solved) this.ctx.waitUntil(refreshFrontPage(ledger))
+    return this.inCoins(result.vault)
+  }
+
+  private inCoins(vault: Vault): Vault {
+    return { ...vault, pays: vault.pays / CENTS }
+  }
+
   async give(viewer: Viewer, to: string, amount: number, note: string | null) {
     this.assertActive(viewer)
     const result = await this.transfer(viewer.id, to, amount, note?.slice(0, 280) ?? null, "give")
@@ -884,6 +907,7 @@ export class Workspace extends DurableObject<Env> {
         // A client from before the stimmy check sends none, and shouldn't switch it off by saving.
         welfare: whole(input.begging?.welfare ?? this.settings().begging.welfare, 0),
       },
+      vault: Math.min(whole(input.vault ?? this.settings().vault, 0), 1_000),
     }
     // Bank can only post where it is a member.
     if (config.channel && config.channel !== this.settings().channel) {
@@ -1199,6 +1223,8 @@ export class Workspace extends DurableObject<Env> {
     if (sold) return this.changed(sold, before)
     const begged = await beg(this.ledger(), { sub, words: words.slice(1), user: params.user_id, channel: params.channel ?? null })
     if (begged) return this.changed(begged, before)
+    const cracked = await vaultCommand(this.ledger(), { sub, words: words.slice(1), user: params.user_id })
+    if (cracked) return this.changed(cracked, before)
     const earned = titles(this.ledger(), { sub, user: params.user_id })
     if (earned) return earned
 
@@ -1242,6 +1268,7 @@ export class Workspace extends DurableObject<Env> {
       bondHelp(config),
       shopHelp(this.ledger()),
       begHelp(this.ledger()),
+      vaultHelp(this.ledger()),
       [`<${this.env.PUBLIC_URL}|open bank> · the leaderboard, the economy, and who the casino has ruined`],
     ]
       .map((lines) => lines.filter(Boolean).join("\n"))

@@ -483,3 +483,43 @@ a[data-component="button-v2"] {
 .chart-table td:first-child {
   text-align: left;
 }
+
+/* A letter in the vault. The mark says how close it was, and the letter is always there to read. */
+.tile {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 6px;
+  border: 0.5px solid var(--v2-border-border-muted);
+  background: var(--v2-background-bg-layer-01);
+  font-family: var(--font-family-mono);
+  font-size: 15px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.tile[data-mark="2"] {
+  background: var(--v2-state-bg-success);
+  border-color: var(--v2-state-border-success);
+  color: var(--v2-state-fg-success);
+}
+
+.tile[data-mark="1"] {
+  background: var(--v2-state-bg-warning);
+  border-color: var(--v2-state-border-warning);
+  color: var(--v2-state-fg-warning);
+  border-style: dashed;
+  border-width: 1px;
+}
+
+.tile[data-mark="0"] {
+  color: var(--v2-text-text-faint);
+}
+
+.tile-key {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+}
