@@ -1128,8 +1128,8 @@ export class Workspace extends DurableObject<Env> {
     console.log("command", { user: params.user_id, text: params.text.slice(0, 200) })
     const config = this.config()
     // Slack shows one hint per command, so the common ones are also registered on their own: /bank-flip 10 is
-    // /bank flip 10.
-    const own = params.command?.match(/^\/bank-([a-z]+)$/)?.[1]
+    // /bank flip 10. The vault is played often enough to have a short one too: /vault crane.
+    const own = params.command === "/vault" ? "vault" : params.command?.match(/^\/bank-([a-z]+)$/)?.[1]
     const text = `${own ?? ""} ${params.text}`.trim()
     const words = text.split(/\s+/).filter(Boolean)
     const sub = (words[0] ?? "").toLowerCase()

@@ -57,6 +57,13 @@
         "should_escape": true
       },
       {
+        "command": "/vault",
+        "url": "https://labs.shebang.se/bank/slack/commands",
+        "description": "Guess the day's five-letter word. Free, and it pays",
+        "usage_hint": "crane",
+        "should_escape": true
+      },
+      {
         "command": "/bank-flip",
         "url": "https://labs.shebang.se/bank/slack/commands",
         "description": "Double or nothing against the house",
