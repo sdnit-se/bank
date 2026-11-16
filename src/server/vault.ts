@@ -110,6 +110,11 @@ export function vaultNews(ledger: Ledger, now = Date.now()) {
   return { got, shut: rows.filter((row) => !cracked(row)).map((row) => row.name).sort() }
 }
 
+const SIGN: Record<string, string> = { 2: ":large_green_circle:", 1: ":large_yellow_circle:", 0: ":white_circle:" }
+const signs = (vault: Vault) => vault.rows.map((row) => [...row.marks].map((mark) => SIGN[mark]).join(""))
+/** How it ended, with every try under it as marks: the letters stay their own. */
+const told = (line: string, vault: Vault) => `${line}\n${signs(vault).join("\n")}`
+
 /**
  * One try at today's word. `name` is how the news names them when the try ends it: a mention where they played in
  * Slack, their plain name when it goes to the bank's channel from the web.
@@ -142,17 +147,16 @@ export async function crack(ledger: Ledger, user: string, typed: string, name: s
     ledger.sql.exec("update vaults set paid = ? where user_id = ? and day = ?", paid ? prize : 0, user, day)
     // Experience doesn't depend on the bank having coins.
     gain(ledger, user, "vault", 20 + 10 * (TRIES - tries))
-    return { vault: vaultFor(ledger, user), news: `:unlock: ${say(secureRand, paid ? CRACKED : EMPTY, { ...words, amount: money(config, prize) })}` }
+    const vault = vaultFor(ledger, user)
+    return { vault, news: told(`:unlock: ${say(secureRand, paid ? CRACKED : EMPTY, { ...words, amount: money(config, prize) })}`, vault) }
   }
   if (tries >= TRIES) {
     gain(ledger, user, "vault", 10)
-    return { vault: vaultFor(ledger, user), news: `:lock: ${say(secureRand, SHUT, words)}` }
+    const vault = vaultFor(ledger, user)
+    return { vault, news: told(`:lock: ${say(secureRand, SHUT, words)}`, vault) }
   }
   return { vault: vaultFor(ledger, user) }
 }
-
-const SIGN: Record<string, string> = { 2: ":large_green_circle:", 1: ":large_yellow_circle:", 0: ":white_circle:" }
-const signs = (vault: Vault) => vault.rows.map((row) => [...row.marks].map((mark) => SIGN[mark]).join(""))
 
 /** Answers `/bank vault`, or returns null when the words aren't about it. Only the result is for the channel. */
 export async function vaultCommand(ledger: Ledger, input: { sub: string; words: string[]; user: string }): Promise<Message | null> {
@@ -164,7 +168,7 @@ export async function vaultCommand(ledger: Ledger, input: { sub: string; words: 
   // The same game with a keyboard and a board, for anyone who'd rather not type commands. A link needs no answer.
   const web = (label: string) => ({ ...button(label, "vault_open", "open"), url: `${ledger.env.PUBLIC_URL}#vault` })
   // What they tried stays between them and the bank; the channel only gets how it went.
-  if (result.news) return withButtons(loud(`${result.news}\n${signs(result.vault).join("\n")}`), [web("Try yours")])
+  if (result.news) return withButtons(loud(result.news), [web("Try yours")])
   const { vault } = result
   const board = signs(vault).map((line, index) => `${line}  \`${vault.rows[index]!.word.toUpperCase()}\``)
   const key = `${SIGN[2]} right letter, right place · ${SIGN[1]} in the word, somewhere else · ${SIGN[0]} not in it`

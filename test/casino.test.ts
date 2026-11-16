@@ -420,7 +420,13 @@ test("the vault costs nothing to try and pays out of the central bank for every 
   expect((await guess(A, "zzzzz"))!.response_type).toBe("ephemeral")
   expect((await guess(A, "zzzzz"))!.text).toContain("tried that one")
   // Cracked on the second try: five tries to spare, two coins each.
-  expect((await guess(A, word(A)))!.response_type).toBe("in_channel")
+  const result = (await guess(A, word(A)))!
+  expect(result.response_type).toBe("in_channel")
+  // The channel gets every try as marks, wherever it was played, and never the letters.
+  const grid = result.text.split("\n").slice(1)
+  expect(grid).toHaveLength(2)
+  expect(grid[1]).toBe(":large_green_circle:".repeat(5))
+  expect(grid.join("")).not.toMatch(/zzzzz/i)
   expect([w.balance(A), w.balance(CENTRAL)]).toEqual([10, 90])
   expect((await guess(A, "crane"))!.text).toContain("cracked today's")
   // An empty bank pays nothing, and prints nothing either.
