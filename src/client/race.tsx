@@ -110,7 +110,8 @@ export function RaceView(props: { me: Me; done: () => void }) {
       const done = await api.finishRace({ id: dealt()!.id, typed: typed(), ms, keys })
       setResult({ ...done, raw: pace(keys, ms), seconds: ms / 1000, slips, samples })
       mutate(done.race)
-      if (done.paid > 0) props.done()
+      // Their balance and their experience have both moved.
+      if (done.paid > 0 || done.xp > 0) props.done()
     } catch (error) {
       setBusy(false)
       await deal()
@@ -311,6 +312,7 @@ export function RaceView(props: { me: Me; done: () => void }) {
                     <Fact label="Counting every key" value={done().raw} />
                     <Fact label="Time" value={`${done().seconds.toFixed(1)}s`} />
                     <Fact label="Slips" value={done().slips} />
+                    <Fact label="Experience" value={`+${done().xp}`} note={done().xp > 0 ? undefined : "today's share is used up"} />
                     <Fact
                       label="Earned"
                       value={done().paid > 0 ? `+${done().paid}` : "0"}

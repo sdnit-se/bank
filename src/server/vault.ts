@@ -11,6 +11,7 @@ import { say, secureRand, type Line } from "./games"
 import { button, loud, quiet, withButtons, type Ledger, type Message } from "./ledger"
 import { money } from "./money"
 import { WORDS } from "./words"
+import { gain, xpToday } from "./xp"
 
 const TRIES = 6
 type Row = { user_id: string; day: number; word: string; guesses: string; paid: number | null }
@@ -88,6 +89,7 @@ function view(ledger: Ledger, user: string, row: Row | null): Vault {
     pays: ledger.config().vault,
     paid: solved ? (row!.paid ?? 0) : null,
     next: nextDraw(Date.now()),
+    xp: xpToday(ledger, user, "vault"),
     record: record(ledger, user),
     office: office(ledger),
   }
@@ -138,9 +140,14 @@ export async function crack(ledger: Ledger, user: string, typed: string, name: s
     const prize = (TRIES + 1 - tries) * config.vault
     const paid = ledger.move({ from: CENTRAL, to: user, amount: prize, kind: "stimulus", note: "the vault" }).ok
     ledger.sql.exec("update vaults set paid = ? where user_id = ? and day = ?", paid ? prize : 0, user, day)
+    // Experience doesn't depend on the bank having coins.
+    gain(ledger, user, "vault", 20 + 10 * (TRIES - tries))
     return { vault: vaultFor(ledger, user), news: `:unlock: ${say(secureRand, paid ? CRACKED : EMPTY, { ...words, amount: money(config, prize) })}` }
   }
-  if (tries >= TRIES) return { vault: vaultFor(ledger, user), news: `:lock: ${say(secureRand, SHUT, words)}` }
+  if (tries >= TRIES) {
+    gain(ledger, user, "vault", 10)
+    return { vault: vaultFor(ledger, user), news: `:lock: ${say(secureRand, SHUT, words)}` }
+  }
   return { vault: vaultFor(ledger, user) }
 }
 

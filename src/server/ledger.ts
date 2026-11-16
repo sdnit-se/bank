@@ -85,6 +85,8 @@ export function historyLine(row: { kind: string; from_id: string | null; to_id: 
       return row.from_id === user ? `-${amount} lost a duel to <@${row.to_id}>` : `+${amount} won a duel against <@${row.from_id}>`
     case "wage":
       return `+${amount} for typing at ${row.note ?? "speed"}`
+    case "level":
+      return `+${amount} for reaching ${row.note ?? "a new level"}`
     case "stimulus":
       if (row.note === "stimmy check") return `+${amount} stimmy check from the central bank`
       if (row.note === "the vault") return `+${amount} from the central bank for cracking the vault`

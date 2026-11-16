@@ -66,6 +66,8 @@ export type Config = {
   vault: number
   /** The most one person can earn in a day at the typing race, which pays in newly made coins. Zero pays nothing. */
   wages: number
+  /** What reaching a new level pays, in newly made coins. Zero pays nothing. */
+  raise: number
 }
 
 /** The typing race as someone sees it: the board, their own figures, and what it pays. */
@@ -95,6 +97,8 @@ export type RaceResult = {
   /** Their own best, and the best anyone here has done. */
   personal: boolean
   record: boolean
+  /** The experience it earned, which is none once the day's share from racing is used up. */
+  xp: number
   race: Race
 }
 
@@ -111,6 +115,8 @@ export type Vault = {
   paid: number | null
   /** When the next word comes. */
   next: number
+  /** The experience today's vault has earned them. */
+  xp: number
   record: VaultRecord
   /** Everyone who has had a go today, best first. Marks only: the words are their own. */
   office: { id: string; name: string; image: string | null; marks: string[]; solved: boolean }[]
@@ -159,6 +165,7 @@ export const defaultConfig: Config = {
   begging: { below: 10, minutes: 60, perDay: 1, welfare: 5 },
   vault: 2,
   wages: 20,
+  raise: 5,
 }
 
 /**
@@ -196,6 +203,7 @@ export type EntryKind =
   | "bounty"
   | "alms"
   | "wage"
+  | "level"
 
 /**
  * The accounts that aren't people. They hold coins like anyone else, so games move coins around without creating or
@@ -268,12 +276,15 @@ export type Me = {
   emoji: Record<string, string>
   /** Why Bank couldn't put its canvas in the bank's channel, if it couldn't. */
   canvasProblem: string | null
+  /** Their experience in all, and what each thing that earns it has earned them today out of the most it can. */
+  xp: number
+  earning: { source: string; label: string; today: number; most: number }[]
 }
 
 export const EMOJI_NAME = /^[a-z0-9_\-+'.]+$/
 
-/** `titles` is what each person has earned, newest first, by their id. */
-export type Leaderboard = { accounts: Account[]; titles: Record<string, string[]> }
+/** `titles` is what each person has earned, newest first, by their id, and `xp` their experience. */
+export type Leaderboard = { accounts: Account[]; titles: Record<string, string[]>; xp: Record<string, number> }
 
 export type History = { entries: Entry[]; people: Record<string, { name: string; image: string | null }> }
 
@@ -399,3 +410,27 @@ export function nextDraw(now: number) {
   while (Number(stockholmHour.format(at)) !== 9) at += HOUR
   return at
 }
+
+/** The experience it takes in all to reach a level: 100 for the second, and each one after costs 100 more than the last. */
+export const levelAt = (level: number) => 50 * level * (level - 1)
+
+export function levelOf(xp: number) {
+  let level = 1
+  while (levelAt(level + 1) <= xp) level++
+  return level
+}
+
+/** What someone is called from each level on. */
+const RANKS: [number, string][] = [
+  [40, "Chairman"],
+  [30, "Partner"],
+  [25, "Managing director"],
+  [20, "Director"],
+  [16, "Vice president"],
+  [12, "Associate"],
+  [8, "Analyst"],
+  [5, "Clerk"],
+  [3, "Teller"],
+  [1, "Intern"],
+]
+export const rankOf = (level: number) => RANKS.find(([from]) => level >= from)![1]

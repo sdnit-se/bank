@@ -5,6 +5,7 @@
 import { BONDS, BOUNTIES, CENTRAL, HOUSE, POOLS, POT } from "../shared/types"
 import type { welfare } from "./begging"
 import { raceNews } from "./race"
+import { levelName, levelNews } from "./xp"
 import type { vaultNews } from "./vault"
 import type { matureBonds } from "./bonds"
 import { say, secureRand, type Line } from "./games"
@@ -110,6 +111,10 @@ const COPY = {
   raced: [
     (w) => `The old record was ${w.before}. Productivity elsewhere in the building is not known to have moved.`,
     (w) => `${w.who} can now type faster than anyone here can think, which was already true of most of the office.`,
+  ],
+  levels: [
+    () => `Every bank ends up with more vice presidents than customers. We're on schedule.`,
+    () => `A bigger number and a longer word next to the name, same desk. The full corporate experience.`,
   ],
   vaultShut: [() => `An everyday English word, five letters, six tries. The vault would like to thank everyone for the job security.`],
   unpaid: [
@@ -259,6 +264,8 @@ export async function publish(ledger: Ledger, round: Round, now = Date.now()) {
   if (round.expired.length) story(`"${round.expired[0]}" expired unanswered`, line(COPY.expired))
   if (day.trades) story(`${count(day.trades, "trade", "trades")} on the stock market, ${coins(day.traded)}`, line(COPY.trades))
   if (bought.length) story(bought[0]!, ...bought.slice(1, 6).map((item) => `${item}.`), line(COPY.bought))
+  const risen = levelNews(ledger, since)
+  if (risen.length) story(`Moved up: ${risen.slice(0, 8).map((up) => `${up.name} to ${levelName(up.level)}`).join("; ")}`, risen.length > 8 && `And ${risen.length - 8} more.`, line(COPY.levels))
   if (round.honours.length) {
     const more = round.honours.length > 8 && `And ${round.honours.length - 8} more, all under \`/bank titles\`.`
     story("New titles", ...round.honours.slice(0, 8).map((honour) => `${at(honour.user_id)} is now *${honour.title}*.`), more)

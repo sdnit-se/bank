@@ -11,6 +11,7 @@ import { CENTS, nextDraw, type Race, type RaceResult } from "../shared/types"
 import { secureRand } from "./games"
 import type { Ledger } from "./ledger"
 import { COMMON } from "./words"
+import { gain } from "./xp"
 
 /** How long a race can be, in words. What it pays is for the shortest, and longer ones pay in proportion. */
 export const LENGTHS = [25, 50, 100]
@@ -100,7 +101,9 @@ export function finishRace(ledger: Ledger, user: string, input: { id: number; ty
   const wage = Math.min(Math.round((WAGES.find((step) => wpm >= step.from)?.pays ?? 0) * lengths * CENTS), left)
   // Made, not moved: nobody is on the other side of this one.
   const paid = wage > 0 && ledger.move({ from: null, to: user, amount: wage, kind: "wage", note: `${wpm} wpm`, actor: user }).ok ? wage : 0
-  return { wpm, accuracy, paid, personal: wpm > (before.mine ?? 0), record: wpm > (before.office ?? 0), race: raceFor(ledger, user) }
+  // Experience is for speed, length and care, and has a day's limit of its own.
+  const xp = gain(ledger, user, "race", (wpm / 10) * lengths * (accuracy / 100))
+  return { wpm, accuracy, paid, xp, personal: wpm > (before.mine ?? 0), record: wpm > (before.office ?? 0), race: raceFor(ledger, user) }
 }
 
 /** Yesterday's best race, for the morning paper, if it beat everything before it. */

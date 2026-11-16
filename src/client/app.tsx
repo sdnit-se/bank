@@ -8,9 +8,9 @@ import { IconButton } from "@opencode/ui/icon-button"
 import { Switch as Toggle } from "@opencode/ui/switch"
 import { Tabs } from "@opencode/ui/tabs"
 import { TextInput } from "@opencode/ui/text-input"
-import { createMemo, createResource, createRoot, createSignal, For, type JSX, Match, Show, Switch } from "solid-js"
+import { createEffect, createMemo, createResource, createRoot, createSignal, For, type JSX, Match, on, onCleanup, Show, Switch } from "solid-js"
 import { createStore, reconcile, unwrap } from "solid-js/store"
-import { amountText, BONDS, BOUNTIES, CENTRAL, currency, HOUSE, INSTITUTIONS, type Config, type CustomEmoji, type Entry, type History, type Listing, type Me, type Shop } from "../shared/types"
+import { amountText, BONDS, BOUNTIES, CENTRAL, currency, HOUSE, INSTITUTIONS, levelAt, levelOf, rankOf, type Config, type CustomEmoji, type Entry, type History, type Listing, type Me, type Shop } from "../shared/types"
 import { api, ApiError, BASE, type Person, type Stocked } from "./api"
 import { CasinoView } from "./casino"
 import { EconomyView } from "./economy"
@@ -271,6 +271,7 @@ function Dashboard(props: { me: Me; refresh: () => void }) {
             <Stat label="Market" value={props.me.sources.market} signed />
           </Show>
         </div>
+        <LevelBar me={props.me} />
       </section>
 
       <div class="flex flex-col gap-4">
@@ -296,7 +297,7 @@ function Dashboard(props: { me: Me; refresh: () => void }) {
 
         <Switch>
           <Match when={tab() === "leaderboard"}>
-            <LeaderboardView me={props.me} accounts={leaderboard()?.accounts} titles={leaderboard()?.titles} />
+            <LeaderboardView me={props.me} accounts={leaderboard()?.accounts} titles={leaderboard()?.titles} xp={leaderboard()?.xp} />
           </Match>
           <Match when={tab() === "activity"}>
             <ActivityView me={props.me} history={history()} />
@@ -339,6 +340,78 @@ function Stat(props: { label: string; value: number; signed?: boolean }) {
         {props.signed && props.value !== 0 ? (props.value > 0 ? "+" : "−") : ""}
         {amountText(Math.abs(props.value))}
       </span>
+    </div>
+  )
+}
+
+const number = (value: number) => value.toLocaleString("en-GB")
+
+/**
+ * Their level under their balance: how far into it they are, and what has earned experience today. When the figure
+ * goes up while they watch, what it went up by floats off the bar, and a new level gets a moment of its own.
+ */
+function LevelBar(props: { me: Me }) {
+  const level = () => levelOf(props.me.xp)
+  const [from, next] = [() => levelAt(level()), () => levelAt(level() + 1)]
+  const [gained, setGained] = createSignal<number | null>(null)
+  const [risen, setRisen] = createSignal<number | null>(null)
+  const timers: ReturnType<typeof setTimeout>[] = []
+  onCleanup(() => timers.forEach(clearTimeout))
+  createEffect(
+    on(
+      () => props.me.xp,
+      (xp, before) => {
+        if (before === undefined || xp <= before) return
+        setGained(xp - before)
+        timers.push(setTimeout(() => setGained(null), 2200))
+        if (levelOf(xp) === levelOf(before)) return
+        setRisen(levelOf(xp))
+        timers.push(setTimeout(() => setRisen(null), 7000))
+      },
+    ),
+  )
+  return (
+    <div class="level w-full">
+      <div class="flex items-baseline justify-between gap-3">
+        <span>
+          <span class="strong">Level {level()}</span> <span class="muted">· {rankOf(level())}</span>
+        </span>
+        <span class="muted num relative">
+          <Show when={gained()}>{(amount) => <span class="level-gain positive">+{amount()} XP</span>}</Show>
+          {number(props.me.xp - from())} / {number(next() - from())} XP
+        </span>
+      </div>
+      <div class="level-track" role="progressbar" aria-label={`Progress to level ${level() + 1}`} aria-valuemin={0} aria-valuemax={next() - from()} aria-valuenow={props.me.xp - from()}>
+        <i style={{ width: `${((props.me.xp - from()) / (next() - from())) * 100}%` }} />
+      </div>
+      <div class="level-how faint">
+        <span>Today:</span>
+        <For each={props.me.earning}>
+          {(item) => (
+            <span classList={{ "level-full": item.today >= item.most }} title={item.today >= item.most ? "That's all it earns today" : undefined}>
+              {item.label}{" "}
+              <span class="num">
+                {item.today}/{item.most}
+                {item.today >= item.most ? " ✓" : ""}
+              </span>
+            </span>
+          )}
+        </For>
+      </div>
+      <Show when={risen()}>
+        {(reached) => (
+          <div class="level-up card" role="status" onClick={() => setRisen(null)}>
+            <span class="level-up-number num">{reached()}</span>
+            <span class="flex flex-col">
+              <span class="strong text-[15px]">Level {reached()}</span>
+              <span class="muted">
+                {rankOf(reached())}
+                {props.me.config.raise > 0 ? ` · +${currency(props.me.config, props.me.config.raise)}` : ""}
+              </span>
+            </span>
+          </div>
+        )}
+      </Show>
     </div>
   )
 }
@@ -404,13 +477,18 @@ const RANKINGS = [
   { key: "received", label: "Most appreciated", note: "given by people" },
   { key: "given", label: "Most generous", note: "given away" },
   { key: "balance", label: "Richest", note: "however they got it" },
+  { key: "xp", label: "Highest level", note: "experience, which never goes down" },
 ] as const
 
-function LeaderboardView(props: { me: Me; accounts: Me["account"][] | undefined; titles: Record<string, string[]> | undefined }) {
+function LeaderboardView(props: { me: Me; accounts: Me["account"][] | undefined; titles: Record<string, string[]> | undefined; xp: Record<string, number> | undefined }) {
   const [ranking, setRanking] = createSignal<(typeof RANKINGS)[number]>(RANKINGS[0])
-  const ranked = createMemo(() =>
-    [...(props.accounts ?? [])].sort((a, b) => b![ranking().key] - a![ranking().key] || b!.balance - a!.balance || a!.name.localeCompare(b!.name)),
-  )
+  const xp = (account: Me["account"]) => props.xp?.[account!.id] ?? 0
+  /** What the chosen ranking goes by. */
+  const value = (account: Me["account"]) => {
+    const key = ranking().key
+    return key === "xp" ? xp(account) : account![key]
+  }
+  const ranked = createMemo(() => [...(props.accounts ?? [])].sort((a, b) => value(b) - value(a) || b!.balance - a!.balance || a!.name.localeCompare(b!.name)))
   return (
     <Panel>
       <Show when={props.accounts} fallback={<Empty>Loading…</Empty>}>
@@ -436,6 +514,11 @@ function LeaderboardView(props: { me: Me; accounts: Me["account"][] | undefined;
                     <Show when={account!.id === props.me.user.id}>
                       <Badge variant="subtle">You</Badge>
                     </Show>
+                    <Show when={levelOf(xp(account)) > 1 && ranking().key !== "xp"}>
+                      <span class="level-chip num" title={`Level ${levelOf(xp(account))}, ${rankOf(levelOf(xp(account)))}`}>
+                        Lv {levelOf(xp(account))}
+                      </span>
+                    </Show>
                     <Show when={props.titles?.[account!.id]}>
                       {(titles) => (
                         <span class="faint truncate hidden sm:inline" title={titles().join(" · ")}>
@@ -446,10 +529,16 @@ function LeaderboardView(props: { me: Me; accounts: Me["account"][] | undefined;
                     </Show>
                   </span>
                   <span class="faint num hidden sm:inline">
-                    {ranking().key === "balance" ? `${amountText(account!.received)} received` : `holds ${amountText(account!.balance)}`}
+                    {ranking().key === "xp"
+                      ? `${rankOf(levelOf(xp(account)))} · ${number(xp(account))} XP`
+                      : ranking().key === "balance"
+                        ? `${amountText(account!.received)} received`
+                        : `holds ${amountText(account!.balance)}`}
                   </span>
                   <span class="strong min-w-16 flex justify-end">
-                    <Amount me={props.me} value={account![ranking().key]} />
+                    <Show when={ranking().key === "xp"} fallback={<Amount me={props.me} value={value(account)} />}>
+                      <span class="num">Level {levelOf(xp(account))}</span>
+                    </Show>
                   </span>
                 </div>
               )}
@@ -515,6 +604,8 @@ function describe(entry: Entry, history: History, viewer: string | null) {
       return `${name(entry.from)} spared ${name(entry.to)} some change`
     case "wage":
       return `${name(entry.to)} earned a wage typing at ${entry.note ?? "speed"}`
+    case "level":
+      return `${name(entry.to)} reached ${entry.note ?? "a new level"}`
     case "print":
       return `the market printed ${viewer === entry.actor ? "your" : `${name(entry.actor)}'s`} gain on ${entry.note ?? "a sale"}`
     default:
@@ -525,7 +616,7 @@ function describe(entry: Entry, history: History, viewer: string | null) {
 
 /** Entries whose note is written by Bank and already part of the description. */
 function fixedNote(entry: Entry) {
-  return ["grant", "bet", "payout", "duel", "sweep", "stimulus", "buy", "sell", "tax", "print", "bond", "shop", "bounty", "wage"].includes(entry.kind)
+  return ["grant", "bet", "payout", "duel", "sweep", "stimulus", "buy", "sell", "tax", "print", "bond", "shop", "bounty", "wage", "level"].includes(entry.kind)
 }
 
 const page = 30
@@ -1318,6 +1409,10 @@ function SettingsPanel(props: { me: Me; changed: () => void }) {
 
         <Numbers title="Typing race" note="A race pays 1 to 4 coins by speed, in newly made coins: it is the one thing that adds to the supply by itself. This is the most one person can earn at it in a day. 0 leaves the race open and pays nothing.">
           <NumberField label="Most a day, coins" value={draft.wages} set={(value) => setDraft("wages", value)} />
+        </Numbers>
+
+        <Numbers title="Levels" note="The vault, typing races, connect four, rock paper scissors and thanking people earn experience, and every new level pays this in newly made coins. 0 keeps the levels and pays nothing.">
+          <NumberField label="Per level, coins" value={draft.raise} set={(value) => setDraft("raise", value)} />
         </Numbers>
 
         <div class="setting">

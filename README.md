@@ -29,6 +29,10 @@ Slack doesn't let apps upload custom emoji, so workspaces add the coin images th
 - **Games of skill** between two people, where the house isn't involved and luck isn't either: connect four
   (`/bank connect @someone 10`) and rock paper scissors, best of three (`/bank rps @someone 10`). Both stakes are held
   until it's over, and ten minutes without a move loses on time (`src/server/matches.ts`).
+- **Levels**, which only go up: the vault, typing races, connect four, rock paper scissors and thanking people earn
+  experience, each up to a most a day, and a new level pays a small raise in newly made coins. A level is said on the
+  answer the person was getting anyway and in the next paper, never in a message of its own (`/bank level`,
+  `src/server/xp.ts`).
 - **Games between people**: a duel with anyone who takes it (`/bank duel 10`), a heist where a crew of up to five robs the house
   together and a caught crew goes to jail unless someone pays bail (`/bank heist 10`, `/bank bail`, `src/server/tables.ts`), and office bets on a yes-or-no question, where whoever called
   it splits the pot (`/bank pool will the demo work?`, `src/server/pools.ts`).

@@ -11,6 +11,7 @@ import { matchClick } from "../src/server/matches"
 import { finishRace, startRace } from "../src/server/race"
 import { marks, vaultCommand, vaultFor, vaultNews } from "../src/server/vault"
 import { sources } from "../src/server/stats"
+import { gain, levelled, xpMark, xpOf } from "../src/server/xp"
 import { heistsDue, interact } from "../src/server/tables"
 import { BOUNTIES, CENTRAL, CENTS, HOUSE, nextDraw, POOLS, POT } from "../src/shared/types"
 import { A, B, clock, frozen, world as bare } from "./world"
@@ -441,6 +442,8 @@ test("the vault costs nothing to try and pays out of the central bank for every 
 
 test("a typing race pays a wage in new coins by speed, up to the day's limit, and only for a time that could be real", async () => {
   const w = world()
+  // Levels pay a raise of their own, which has its own test.
+  w.config.raise = 0
   const before = w.total()
   /** Runs a race at about this many words a minute, by the racer's clock and by ours. */
   const run = async (wpm: number, claimed?: number) => {
@@ -466,6 +469,35 @@ test("a typing race pays a wage in new coins by speed, up to the day's limit, an
   expect(w.total()).toBe(before + 20)
   clock.now = nextDraw(clock.now) + 60_000
   expect((await run(120)).paid).toBe(4 * CENTS)
+})
+
+test("experience has a day's limit from each thing that earns it, and a new level pays its raise once, in new coins", async () => {
+  const w = world()
+  const before = w.total()
+  /** A hundred words at a hundred a minute: 40 experience, while the day has any left to give. */
+  const run = async () => {
+    const race = await startRace(w.ledger, A, 100)
+    const ms = Math.round((race.text.length / 5 / 100) * 60_000)
+    clock.now += ms
+    return finishRace(w.ledger, A, { id: race.id, typed: race.text, ms, keys: race.text.length }).xp
+  }
+  expect([await run(), await run()]).toEqual([40, 40])
+  const mark = xpMark(w.ledger)
+  // The third takes them past 100 and up a level; racing gives 150 a day and then nothing.
+  expect([await run(), await run(), await run()]).toEqual([40, 30, 0])
+  // The day's wage of 20 and one raise of 5, and nothing else was made.
+  expect([w.balance(A), w.total()]).toEqual([125, before + 25])
+  // Slack hears of it on an answer that was going out anyway, by name, and a private answer to someone else doesn't.
+  const said = levelled(w.ledger, { response_type: "in_channel", text: "result" }, mark, B).text
+  expect(said).toContain("uaaa reached *level 2*")
+  expect(said).not.toContain("<@")
+  expect(levelled(w.ledger, { response_type: "ephemeral", text: "result" }, mark, B).text).toBe("result")
+  // Thanking the same colleague twice in a day counts once.
+  expect([gain(w.ledger, A, "gave", 10, B), gain(w.ledger, A, "gave", 10, B)]).toEqual([10, 0])
+  clock.now = nextDraw(clock.now) + 60_000
+  expect(await run()).toBe(40)
+  expect(xpOf(w.ledger, A)).toBe(200)
+  expect(w.total()).toBe(before + 25 + 16)
 })
 
 test("an office bet pays the whole pot to the side that was right, and gives stakes back when nobody was", async () => {

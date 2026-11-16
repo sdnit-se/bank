@@ -25,7 +25,7 @@ import {
 } from "../shared/types"
 import { announceRate, bonded, bondHelp, bonds } from "./bonds"
 import { casinoHelp, economy, play, settle, setup } from "./casino"
-import { historyLine, newsroom, playedLine, schedule, type Ledger, type Message } from "./ledger"
+import { historyLine, newsroom, playedLine, quiet, schedule, type Ledger, type Message } from "./ledger"
 import type { Env } from "./env"
 import { market, marketHelp, marketStats, portfolio, setupMarket } from "./market"
 import { convertToCents, inCents, money as currency } from "./money"
@@ -41,6 +41,7 @@ import { finishRace, raceFor, setupRace, startRace } from "./race"
 import { buy, setupShop, shop, shopClick, shopFor, shopHelp, stock, unstock } from "./shop"
 import { heistsDue, interact } from "./tables"
 import { titles, titlesOf } from "./titles"
+import { gain, levelHelp, levelled, levels, setupXp, standing, xpMark, xpOfAll } from "./xp"
 import { levy, stimulus } from "./taxes"
 
 export type Install = {
@@ -115,6 +116,8 @@ type Move =
   | { ok: false; reason: "insufficient" | "unknown"; balance: number }
 
 export type SlackMessage = Message
+
+type Command = { text: string; user_id: string; request: string; channel?: string | null; command?: string | null }
 
 type ReactionEvent = {
   type: "reaction_added" | "reaction_removed"
@@ -214,6 +217,7 @@ export class Workspace extends DurableObject<Env> {
     setupBegging(this.sql)
     setupVault(this.sql)
     setupRace(this.sql)
+    setupXp(this.sql)
     this.ctx.storage.transactionSync(() => convertToCents(this.sql))
   }
 
@@ -237,7 +241,8 @@ export class Workspace extends DurableObject<Env> {
   /** A click on a button under one of Bank's messages. */
   async interaction(input: { user: string; action: string; value: string }): Promise<SlackMessage> {
     const [ledger, before] = [this.ledger(), this.lastEntry()]
-    return this.changed((await shopClick(ledger, input)) ?? (await bountyClick(ledger, input)) ?? (await begClick(ledger, input)) ?? (await matchClick(ledger, input)) ?? (await interact(ledger, input)), before)
+    const mark = xpMark(ledger)
+    return levelled(ledger, this.changed((await shopClick(ledger, input)) ?? (await bountyClick(ledger, input)) ?? (await begClick(ledger, input)) ?? (await matchClick(ledger, input)) ?? (await interact(ledger, input)), before), mark, input.user)
   }
 
   /** The daily round. */
@@ -763,6 +768,7 @@ export class Workspace extends DurableObject<Env> {
       sources: this.sourcesOf(viewer.id),
       config,
       canvasProblem: this.meta<string>("canvas_problem"),
+      ...standing(this.ledger(), viewer.id),
     }
   }
 
@@ -774,6 +780,7 @@ export class Workspace extends DurableObject<Env> {
         .toArray()
         .map((row) => this.account(row)),
       titles: titlesOf(this.ledger()),
+      xp: xpOfAll(this.ledger()),
     }
   }
 
@@ -931,6 +938,7 @@ export class Workspace extends DurableObject<Env> {
       },
       vault: Math.min(whole(input.vault ?? this.settings().vault, 0), 1_000),
       wages: Math.min(whole(input.wages ?? this.settings().wages, 0), 1_000),
+      raise: Math.min(whole(input.raise ?? this.settings().raise, 0), 1_000),
     }
     // Bank can only post where it is a member.
     if (config.channel && config.channel !== this.settings().channel) {
@@ -1125,6 +1133,11 @@ export class Workspace extends DurableObject<Env> {
     if (recipient.gone) return { ok: false, message: `that account is no longer active` }
     const result = this.move({ from, to, amount, kind, note, actor: from, link })
     if (result.ok) levy(this.ledger(), { from: to, amount, rate: config.taxes.transfer, note: "transfer tax", actor: from })
+    // The first thanks between two people each day is worth experience to both. The amount doesn't come into it.
+    if (result.ok) {
+      gain(this.ledger(), from, "gave", 10, to)
+      gain(this.ledger(), to, "thanked", 15, from)
+    }
     if (!result.ok) {
       return {
         ok: false,
@@ -1137,13 +1150,13 @@ export class Workspace extends DurableObject<Env> {
     return { ok: true, balance: result.from ?? 0 }
   }
 
-  async command(params: {
-    text: string
-    user_id: string
-    request: string
-    channel?: string | null
-    command?: string | null
-  }): Promise<SlackMessage> {
+  /** A slash command's answer, with a line under it if it took someone up a level. */
+  async command(params: Command): Promise<SlackMessage> {
+    const mark = xpMark(this.ledger())
+    return levelled(this.ledger(), await this.answer(params), mark, params.user_id)
+  }
+
+  private async answer(params: Command): Promise<SlackMessage> {
     const fresh = this.sql
       .exec("insert or ignore into events (id, at) values (?, ?)", `command:${params.request}`, Date.now()).rowsWritten
     if (!fresh) return { response_type: "ephemeral", text: "already handled" }
@@ -1249,7 +1262,7 @@ export class Workspace extends DurableObject<Env> {
     if (sub === "race" || sub === "type") return reply(`the typing race is on <${this.env.PUBLIC_URL}#race|the bank's site>: a keyboard, a clock, and up to ${currency(config, config.wages / CENTS)} a day for being quick.`)
     const cracked = await vaultCommand(this.ledger(), { sub, words: words.slice(1), user: params.user_id })
     if (cracked) return this.changed(cracked, before)
-    const earned = titles(this.ledger(), { sub, user: params.user_id })
+    const earned = titles(this.ledger(), { sub, user: params.user_id }) ?? levels(this.ledger(), { sub, user: params.user_id })
     if (earned) return earned
 
     // give / send / pay, or just "/bank @someone 10"
@@ -1293,6 +1306,7 @@ export class Workspace extends DurableObject<Env> {
       shopHelp(this.ledger()),
       begHelp(this.ledger()),
       vaultHelp(this.ledger()),
+      levelHelp(),
       config.wages > 0 ? [`*typing race* · under Games on <${this.env.PUBLIC_URL}#race|the bank's site> · type a line of words as fast as you can. no stake, and it pays up to ${currency(config, config.wages / CENTS)} a day`] : [],
       [`<${this.env.PUBLIC_URL}|open bank> · the leaderboard, the economy, and who the casino has ruined`],
     ]
@@ -1356,6 +1370,7 @@ export class Workspace extends DurableObject<Env> {
     const link = await this.call<{ permalink: string }>("chat.getPermalink", { channel, message_ts: ts })
       .then((result) => result.permalink)
       .catch(() => null)
+    const mark = xpMark(this.ledger())
     const result = await this.transfer(event.user, to, value.amount, null, "reaction", link)
     if (!result.ok) {
       // Nothing moved, so let them try again once they have enough.
@@ -1385,7 +1400,8 @@ export class Workspace extends DurableObject<Env> {
       const where = link ? ` for <${link}|your message>` : ""
       await this.call("chat.postMessage", {
         channel: to,
-        text: `:${config.symbol}: <@${event.user}> gave you *${currency(config, value.amount)}*${where}`.trim(),
+        // If being thanked took them up a level, the note they were getting says so. Nothing is sent for the level alone.
+        text: levelled(this.ledger(), quiet(`:${config.symbol}: <@${event.user}> gave you *${currency(config, value.amount)}*${where}`.trim()), mark, to).text,
         unfurl_links: false,
       }).catch((error) => console.error("notify failed", error))
     }

@@ -13,6 +13,7 @@ import { brokeLine, say, secureRand, type Line } from "./games"
 import { button, inPlace, loud, quiet, tooFast, WAITS, withButtons, type Ledger, type Message } from "./ledger"
 import { money } from "./money"
 import { levy, taxed } from "./taxes"
+import { gain } from "./xp"
 
 export type MatchGame = "connect" | "rps"
 type Match = { id: number; game: MatchGame; a: string; b: string; stake: number; state: string; channel: string | null; started: number; moved: number }
@@ -126,10 +127,14 @@ function finish(ledger: Ledger, match: Match, winner: string | null, lines: Line
   const again = button("Rematch", "match_again", `${match.game}:${match.a}:${match.b}:${match.stake}`)
   if (!winner) {
     for (const player of players(match)) ledger.move({ from: POOLS, to: player, amount: match.stake, kind: "payout", note: NAME[match.game] })
+    // A game played to a draw is still a game played. One nobody turned up for isn't.
+    if (lines !== CALLED_OFF) for (const player of players(match)) gain(ledger, player, "match", 15)
     return withButtons(loud(say(secureRand, lines, { a: `<@${match.a}>`, b: `<@${match.b}>`, amount: money(config, match.stake), ...words }) + under), [again])
   }
   const loser = winner === match.a ? match.b : match.a
   ledger.move({ from: POOLS, to: winner, amount: match.stake * 2, kind: "payout", note: NAME[match.game], actor: winner })
+  gain(ledger, winner, "match", 30)
+  gain(ledger, loser, "match", 10)
   // Their own stake coming back isn't winnings.
   const tax = levy(ledger, { from: winner, amount: match.stake, rate: config.taxes.winnings, note: "winnings tax" })
   const text = say(secureRand, lines, { winner: `<@${winner}>`, loser: `<@${loser}>`, amount: money(config, match.stake), game: NAME[match.game], ...words })

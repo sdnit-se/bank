@@ -71,8 +71,8 @@ export function VaultView(props: { me: Me; done: () => void }) {
       setTimeout(() => {
         setRolling(null)
         setOpened(next.solved)
-        // The prize is in their balance now.
-        if (next.solved) props.done()
+        // The prize is in their balance now, and win or lose there's experience for it.
+        if (next.left === 0) props.done()
       }, STAGGER * (LENGTH - 1) + ROLL)
     } catch (error) {
       refuse((error as Error).message)
@@ -214,6 +214,9 @@ export function VaultView(props: { me: Me; done: () => void }) {
                       {state().paid ? `The central bank paid you ${coins(state().paid!)}.` : "The central bank had nothing left to pay you with."} A new word comes{" "}
                       {at(state().next)}.
                     </div>
+                  </Show>
+                  <Show when={state().xp > 0}>
+                    <div class="positive num">+{state().xp} XP</div>
                   </Show>
                   <div>
                     <Button variant="neutral" size="small" onClick={copy}>
